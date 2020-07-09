@@ -336,7 +336,7 @@ func (g *goPackage) GenerateBuildActions(ctx blueprint.ModuleContext) {
 			filepath.FromSlash(g.properties.PkgPath)+".a")
 		g.testResultFile = buildGoTest(ctx, testRoot(ctx), testArchiveFile,
 			g.properties.PkgPath, srcs, genSrcs,
-			testSrcs)
+			testSrcs, g.config.useValidations)
 	}
 
 	buildGoPackage(ctx, g.pkgRoot, g.properties.PkgPath, g.archiveFile,
@@ -417,7 +417,7 @@ func (g *goBinary) GenerateBuildActions(ctx blueprint.ModuleContext) {
 		genSrcs = append(genSrcs, pluginSrc)
 	}
 
-	var deps []string
+	var testDeps []string
 
 	if hasPlugins && !buildGoPluginLoader(ctx, "main", pluginSrc) {
 		return
@@ -433,8 +433,8 @@ func (g *goBinary) GenerateBuildActions(ctx blueprint.ModuleContext) {
 	}
 
 	if g.config.runGoTests {
-		deps = buildGoTest(ctx, testRoot(ctx), testArchiveFile,
-			name, srcs, genSrcs, testSrcs)
+		testDeps = buildGoTest(ctx, testRoot(ctx), testArchiveFile,
+			name, srcs, genSrcs, testSrcs, g.config.useValidations)
 	}
 
 	buildGoPackage(ctx, objDir, name, archiveFile, srcs, genSrcs)
@@ -447,7 +447,7 @@ func (g *goBinary) GenerateBuildActions(ctx blueprint.ModuleContext) {
 			linkDeps = append(linkDeps, dep.GoPackageTarget())
 			libDir := dep.GoPkgRoot()
 			libDirFlags = append(libDirFlags, "-L "+libDir)
-			deps = append(deps, dep.GoTestTargets()...)
+			testDeps = append(testDeps, dep.GoTestTargets()...)
 		})
 
 	linkArgs := map[string]string{}
@@ -464,12 +464,20 @@ func (g *goBinary) GenerateBuildActions(ctx blueprint.ModuleContext) {
 		Optional:  true,
 	})
 
+	var orderOnlyDeps, validationDeps []string
+	if g.config.useValidations {
+		validationDeps = testDeps
+	} else {
+		orderOnlyDeps = testDeps
+	}
+
 	ctx.Build(pctx, blueprint.BuildParams{
-		Rule:      cp,
-		Outputs:   []string{g.installPath},
-		Inputs:    []string{aoutFile},
-		OrderOnly: deps,
-		Optional:  !g.properties.Default,
+		Rule:        cp,
+		Outputs:     []string{g.installPath},
+		Inputs:      []string{aoutFile},
+		OrderOnly:   orderOnlyDeps,
+		Validations: validationDeps,
+		Optional:    !g.properties.Default,
 	})
 }
 
@@ -534,7 +542,7 @@ func buildGoPackage(ctx blueprint.ModuleContext, pkgRoot string,
 }
 
 func buildGoTest(ctx blueprint.ModuleContext, testRoot, testPkgArchive,
-	pkgPath string, srcs, genSrcs, testSrcs []string) []string {
+	pkgPath string, srcs, genSrcs, testSrcs []string, useValidations bool) []string {
 
 	if len(testSrcs) == 0 {
 		return nil
@@ -596,11 +604,19 @@ func buildGoTest(ctx blueprint.ModuleContext, testRoot, testPkgArchive,
 		Optional: true,
 	})
 
+	var orderOnlyDeps, validationDeps []string
+	if useValidations {
+		validationDeps = testDeps
+	} else {
+		orderOnlyDeps = testDeps
+	}
+
 	ctx.Build(pctx, blueprint.BuildParams{
-		Rule:      test,
-		Outputs:   []string{testPassed},
-		Inputs:    []string{testFile},
-		OrderOnly: testDeps,
+		Rule:        test,
+		Outputs:     []string{testPassed},
+		Inputs:      []string{testFile},
+		OrderOnly:   orderOnlyDeps,
+		Validations: validationDeps,
 		Args: map[string]string{
 			"pkg":       pkgPath,
 			"pkgSrcDir": filepath.Dir(testFiles[0]),
