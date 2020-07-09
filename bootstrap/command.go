@@ -40,6 +40,7 @@ var (
 	memprofile     string
 	traceFile      string
 	runGoTests     bool
+	useValidations bool
 	noGC           bool
 	moduleListFile string
 	emptyNinjaFile bool
@@ -61,6 +62,7 @@ func init() {
 	flag.StringVar(&memprofile, "memprofile", "", "write memory profile to file")
 	flag.BoolVar(&noGC, "nogc", false, "turn off GC for debugging")
 	flag.BoolVar(&runGoTests, "t", false, "build and run go tests during bootstrap")
+	flag.BoolVar(&useValidations, "use-validations", false, "use validations to depend on go tests")
 	flag.StringVar(&moduleListFile, "l", "", "file that lists filepaths to parse")
 	flag.BoolVar(&emptyNinjaFile, "empty-ninja-file", false, "write out a 0-byte ninja file")
 }
@@ -129,6 +131,7 @@ func Main(ctx *blueprint.Context, config interface{}, extraNinjaFileDeps ...stri
 		topLevelBlueprintsFile: flag.Arg(0),
 		emptyNinjaFile:         emptyNinjaFile,
 		runGoTests:             runGoTests,
+		useValidations:         useValidations,
 		moduleListFile:         moduleListFile,
 	}
 
