@@ -39,7 +39,7 @@ import (
 // modified as necessary by the Mutator.
 //
 // The Module implementation can access the build configuration as well as any
-// modules on which on which it depends (as defined by the "deps" property
+// modules on which it depends (as defined by the "deps" property
 // specified in the Blueprints file, dynamically added by implementing the
 // (deprecated) DynamicDependerModule interface, or dynamically added by a
 // BottomUpMutator) using the ModuleContext passed to GenerateBuildActions.
