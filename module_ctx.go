@@ -1288,20 +1288,21 @@ type LoadHookContext interface {
 
 	// CreateModule creates a new module by calling the factory method for the specified moduleType, and applies
 	// the specified property structs to it as if the properties were set in a blueprint file.
-	CreateModule(ModuleFactory, ...interface{}) Module
+	CreateModule(ModuleFactory, string, ...interface{}) Module
 
 	// RegisterScopedModuleType creates a new module type that is scoped to the current Blueprints
 	// file.
 	RegisterScopedModuleType(name string, factory ModuleFactory)
 }
 
-func (l *loadHookContext) CreateModule(factory ModuleFactory, props ...interface{}) Module {
+func (l *loadHookContext) CreateModule(factory ModuleFactory, typeName string, props ...interface{}) Module {
 	module := newModule(factory)
 
 	module.relBlueprintsFile = l.module.relBlueprintsFile
 	module.pos = l.module.pos
 	module.propertyPos = l.module.propertyPos
 	module.createdBy = l.module
+	module.typeName = typeName
 
 	for _, p := range props {
 		err := proptools.AppendMatchingProperties(module.properties, p, nil)
