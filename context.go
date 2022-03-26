@@ -34,6 +34,7 @@ import (
 	"text/scanner"
 	"text/template"
 
+	"github.com/google/blueprint/metrics"
 	"github.com/google/blueprint/parser"
 	"github.com/google/blueprint/pathtools"
 	"github.com/google/blueprint/proptools"
@@ -71,7 +72,9 @@ const MockModuleListFile = "bplist"
 type Context struct {
 	context.Context
 
-	// set at instantiation
+	// Used for metrics-related event logging.
+	EventHandler *metrics.EventHandler
+
 	moduleFactories     map[string]ModuleFactory
 	nameInterface       NameInterface
 	moduleGroups        []*moduleGroup
@@ -380,8 +383,10 @@ type mutatorInfo struct {
 }
 
 func newContext() *Context {
+	eventHandler := metrics.EventHandler{}
 	return &Context{
 		Context:            context.Background(),
+		EventHandler:       &eventHandler,
 		moduleFactories:    make(map[string]ModuleFactory),
 		nameInterface:      NewSimpleNameInterface(),
 		moduleInfo:         make(map[Module]*moduleInfo),
@@ -1538,6 +1543,8 @@ func (c *Context) addModule(module *moduleInfo) []error {
 // the modules depended upon are defined and that no circular dependencies
 // exist.
 func (c *Context) ResolveDependencies(config interface{}) (deps []string, errs []error) {
+	c.BeginEvent("resolve_deps")
+	defer c.EndEvent("resolve_deps")
 	return c.resolveDependencies(c.Context, config)
 }
 
@@ -2404,6 +2411,8 @@ func writeJson(w io.Writer, modules []*JsonModule) {
 // methods.
 
 func (c *Context) PrepareBuildActions(config interface{}) (deps []string, errs []error) {
+	c.BeginEvent("prepare_build_actions")
+	defer c.EndEvent("prepare_build_actions")
 	pprof.Do(c.Context, pprof.Labels("blueprint", "PrepareBuildActions"), func(ctx context.Context) {
 		c.buildActionsReady = false
 
@@ -4104,6 +4113,14 @@ func (c *Context) writeAllSingletonActions(nw *ninjaWriter) error {
 	}
 
 	return nil
+}
+
+func (c *Context) BeginEvent(name string) {
+	c.EventHandler.Begin(name)
+}
+
+func (c *Context) EndEvent(name string) {
+	c.EventHandler.End(name)
 }
 
 func (c *Context) writeLocalBuildActions(nw *ninjaWriter,

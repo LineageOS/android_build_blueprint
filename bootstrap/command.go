@@ -81,7 +81,9 @@ func RunBlueprint(args Args, stopBefore StopBefore, ctx *blueprint.Context, conf
 	} else {
 		fatalf("-l <moduleListFile> is required and must be nonempty")
 	}
+	ctx.BeginEvent("list_modules")
 	filesToParse, err := ctx.ListModulePaths(srcDir)
+	ctx.EndEvent("list_modules")
 	if err != nil {
 		fatalf("could not enumerate files: %v\n", err.Error())
 	}
@@ -91,10 +93,12 @@ func RunBlueprint(args Args, stopBefore StopBefore, ctx *blueprint.Context, conf
 	ctx.RegisterModuleType("blueprint_go_binary", newGoBinaryModuleFactory())
 	ctx.RegisterSingletonType("bootstrap", newSingletonFactory())
 
+	ctx.BeginEvent("parse_bp")
 	blueprintFiles, errs := ctx.ParseFileList(".", filesToParse, config)
 	if len(errs) > 0 {
 		fatalErrors(errs)
 	}
+	ctx.EndEvent("parse_bp")
 
 	// Add extra ninja file dependencies
 	ninjaDeps = append(ninjaDeps, blueprintFiles...)
@@ -124,6 +128,8 @@ func RunBlueprint(args Args, stopBefore StopBefore, ctx *blueprint.Context, conf
 	var f *os.File
 	var buf *bufio.Writer
 
+	ctx.BeginEvent("write_files")
+	defer ctx.EndEvent("write_files")
 	if args.EmptyNinjaFile {
 		if err := ioutil.WriteFile(joinPath(ctx.SrcDir(), args.OutFile), []byte(nil), outFilePermissions); err != nil {
 			fatalf("error writing empty Ninja file: %s", err)
