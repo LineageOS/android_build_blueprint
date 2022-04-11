@@ -2268,7 +2268,7 @@ func (c *Context) updateDependencies() (errs []error) {
 	return
 }
 
-type jsonVariationMap map[string]string
+type jsonVariationMap []Variation
 
 type jsonModuleName struct {
 	Name                 string
@@ -2290,7 +2290,17 @@ type JsonModule struct {
 }
 
 func toJsonVariationMap(vm variationMap) jsonVariationMap {
-	return jsonVariationMap(vm)
+	m := make(jsonVariationMap, 0, len(vm))
+	for k, v := range vm {
+		m = append(m, Variation{k, v})
+	}
+	sort.Slice(m, func(i, j int) bool {
+		if m[i].Mutator != m[j].Mutator {
+			return m[i].Mutator < m[j].Mutator
+		}
+		return m[i].Variation < m[j].Variation
+	})
+	return m
 }
 
 func jsonModuleNameFromModuleInfo(m *moduleInfo) *jsonModuleName {
