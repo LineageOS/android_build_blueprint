@@ -83,7 +83,6 @@ type Context struct {
 	preSingletonInfo    []*singletonInfo
 	singletonInfo       []*singletonInfo
 	mutatorInfo         []*mutatorInfo
-	earlyMutatorInfo    []*mutatorInfo
 	variantMutatorNames []string
 
 	depsModified uint32 // positive if a mutator modified the dependencies
@@ -628,38 +627,6 @@ type MutatorHandle interface {
 func (mutator *mutatorInfo) Parallel() MutatorHandle {
 	mutator.parallel = true
 	return mutator
-}
-
-// RegisterEarlyMutator registers a mutator that will be invoked to split
-// Modules into multiple variant Modules before any dependencies have been
-// created.  Each registered mutator is invoked in registration order once
-// per Module (including each variant from previous early mutators).  Module
-// order is unpredictable.
-//
-// In order for dependencies to be satisifed in a later pass, all dependencies
-// of a module either must have an identical variant or must have no variations.
-//
-// The mutator type names given here must be unique to all bottom up or early
-// mutators in the Context.
-//
-// Deprecated, use a BottomUpMutator instead.  The only difference between
-// EarlyMutator and BottomUpMutator is that EarlyMutator runs before the
-// deprecated DynamicDependencies.
-func (c *Context) RegisterEarlyMutator(name string, mutator EarlyMutator) {
-	for _, m := range c.variantMutatorNames {
-		if m == name {
-			panic(fmt.Errorf("mutator name %s is already registered", name))
-		}
-	}
-
-	c.earlyMutatorInfo = append(c.earlyMutatorInfo, &mutatorInfo{
-		bottomUpMutator: func(mctx BottomUpMutatorContext) {
-			mutator(mctx)
-		},
-		name: name,
-	})
-
-	c.variantMutatorNames = append(c.variantMutatorNames, name)
 }
 
 // SetIgnoreUnknownModuleTypes sets the behavior of the context in the case
@@ -2483,13 +2450,8 @@ func (c *Context) PrepareBuildActions(config interface{}) (deps []string, errs [
 }
 
 func (c *Context) runMutators(ctx context.Context, config interface{}) (deps []string, errs []error) {
-	var mutators []*mutatorInfo
-
 	pprof.Do(ctx, pprof.Labels("blueprint", "runMutators"), func(ctx context.Context) {
-		mutators = append(mutators, c.earlyMutatorInfo...)
-		mutators = append(mutators, c.mutatorInfo...)
-
-		for _, mutator := range mutators {
+		for _, mutator := range c.mutatorInfo {
 			pprof.Do(ctx, pprof.Labels("mutator", mutator.name), func(context.Context) {
 				var newDeps []string
 				if mutator.topDownMutator != nil {
