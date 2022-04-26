@@ -2235,12 +2235,12 @@ func (c *Context) updateDependencies() (errs []error) {
 	return
 }
 
-type jsonVariationMap []Variation
+type jsonVariations []Variation
 
 type jsonModuleName struct {
 	Name                 string
-	Variations           jsonVariationMap
-	DependencyVariations jsonVariationMap
+	Variations           jsonVariations
+	DependencyVariations jsonVariations
 }
 
 type jsonDep struct {
@@ -2256,8 +2256,8 @@ type JsonModule struct {
 	Module    map[string]interface{}
 }
 
-func toJsonVariationMap(vm variationMap) jsonVariationMap {
-	m := make(jsonVariationMap, 0, len(vm))
+func toJsonVariationMap(vm variationMap) jsonVariations {
+	m := make(jsonVariations, 0, len(vm))
 	for k, v := range vm {
 		m = append(m, Variation{k, v})
 	}
