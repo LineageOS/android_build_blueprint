@@ -836,7 +836,7 @@ type TopDownMutatorContext interface {
 
 	// CreateModule creates a new module by calling the factory method for the specified moduleType, and applies
 	// the specified property structs to it as if the properties were set in a blueprint file.
-	CreateModule(ModuleFactory, ...interface{}) Module
+	CreateModule(ModuleFactory, string, ...interface{}) Module
 }
 
 type BottomUpMutatorContext interface {
@@ -1201,13 +1201,14 @@ func (mctx *mutatorContext) Rename(name string) {
 	mctx.rename = append(mctx.rename, rename{mctx.module.group, name})
 }
 
-func (mctx *mutatorContext) CreateModule(factory ModuleFactory, props ...interface{}) Module {
+func (mctx *mutatorContext) CreateModule(factory ModuleFactory, typeName string, props ...interface{}) Module {
 	module := newModule(factory)
 
 	module.relBlueprintsFile = mctx.module.relBlueprintsFile
 	module.pos = mctx.module.pos
 	module.propertyPos = mctx.module.propertyPos
 	module.createdBy = mctx.module
+	module.typeName = typeName
 
 	for _, p := range props {
 		err := proptools.AppendMatchingProperties(module.properties, p, nil)
