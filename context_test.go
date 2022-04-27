@@ -461,17 +461,17 @@ func createTestMutator(ctx TopDownMutatorContext) {
 		Deps []string
 	}
 
-	ctx.CreateModule(newBarModule, &props{
+	ctx.CreateModule(newBarModule, "new_bar", &props{
 		Name: "B",
 		Deps: []string{"D"},
 	})
 
-	ctx.CreateModule(newBarModule, &props{
+	ctx.CreateModule(newBarModule, "new_bar", &props{
 		Name: "C",
 		Deps: []string{"D"},
 	})
 
-	ctx.CreateModule(newFooModule, &props{
+	ctx.CreateModule(newFooModule, "new_foo", &props{
 		Name: "D",
 	})
 }
