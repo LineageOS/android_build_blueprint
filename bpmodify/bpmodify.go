@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"unicode"
 
 	"github.com/google/blueprint/parser"
@@ -68,6 +69,11 @@ func processFile(filename string, in io.Reader, out io.Writer) error {
 			return err
 		}
 		defer f.Close()
+
+		if *write {
+			syscall.Flock(int(f.Fd()), syscall.LOCK_EX)
+		}
+
 		in = f
 	}
 
