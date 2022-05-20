@@ -113,6 +113,13 @@ func RunBlueprint(args Args, stopBefore StopBefore, ctx *blueprint.Context, conf
 		return ninjaDeps
 	}
 
+	if ctx.BeforePrepareBuildActionsHook != nil {
+		err := ctx.BeforePrepareBuildActionsHook()
+		if err != nil {
+			fatalErrors([]error{err})
+		}
+	}
+
 	extraDeps, errs = ctx.PrepareBuildActions(config)
 	if len(errs) > 0 {
 		fatalErrors(errs)
