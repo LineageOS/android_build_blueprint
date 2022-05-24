@@ -2255,6 +2255,7 @@ type JsonModule struct {
 	Deps      []jsonDep
 	Type      string
 	Blueprint string
+	CreatedBy *string
 	Module    map[string]interface{}
 }
 
@@ -2291,6 +2292,10 @@ func jsonModuleFromModuleInfo(m *moduleInfo) *JsonModule {
 		Type:           m.typeName,
 		Blueprint:      m.relBlueprintsFile,
 		Module:         make(map[string]interface{}),
+	}
+	if m.createdBy != nil {
+		n := m.createdBy.Name()
+		result.CreatedBy = &n
 	}
 	if j, ok := m.logicModule.(JSONDataSupplier); ok {
 		j.AddJSONData(&result.Module)
