@@ -3648,7 +3648,7 @@ func (c *Context) SingletonName(singleton Singleton) string {
 	return ""
 }
 
-// WriteBuildFile writes the Ninja manifeset text for the generated build
+// WriteBuildFile writes the Ninja manifest text for the generated build
 // actions to w.  If this is called before PrepareBuildActions successfully
 // completes then ErrBuildActionsNotReady is returned.
 func (c *Context) WriteBuildFile(w io.StringWriter) error {

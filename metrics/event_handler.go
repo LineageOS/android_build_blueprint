@@ -62,6 +62,13 @@ func (h *EventHandler) Begin(name string) {
 	h.scopeStartTimes = append(h.scopeStartTimes, _now())
 }
 
+// Do wraps a function with calls to Begin() and End().
+func (h *EventHandler) Do(name string, f func()) {
+	h.Begin(name)
+	defer h.End(name)
+	f()
+}
+
 // End logs the end of an event. All events nested within this event must have
 // themselves been marked completed.
 func (h *EventHandler) End(name string) {
