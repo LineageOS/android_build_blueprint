@@ -991,11 +991,17 @@ func (mctx *mutatorContext) MutatorName() string {
 }
 
 func (mctx *mutatorContext) CreateVariations(variationNames ...string) []Module {
-	return mctx.createVariations(variationNames, false)
+	depChooser := chooseDepInherit(mctx.name, mctx.defaultVariation)
+	return mctx.createVariations(variationNames, depChooser, false)
+}
+
+func (mctx *mutatorContext) createVariationsWithTransition(transition Transition, variationNames ...string) []Module {
+	return mctx.createVariations(variationNames, chooseDepByTransition(mctx.name, transition), false)
 }
 
 func (mctx *mutatorContext) CreateLocalVariations(variationNames ...string) []Module {
-	return mctx.createVariations(variationNames, true)
+	depChooser := chooseDepInherit(mctx.name, mctx.defaultVariation)
+	return mctx.createVariations(variationNames, depChooser, true)
 }
 
 func (mctx *mutatorContext) SetVariationProvider(module Module, provider ProviderKey, value interface{}) {
@@ -1008,9 +1014,9 @@ func (mctx *mutatorContext) SetVariationProvider(module Module, provider Provide
 	panic(fmt.Errorf("module %q is not a newly created variant of %q", module, mctx.module))
 }
 
-func (mctx *mutatorContext) createVariations(variationNames []string, local bool) []Module {
+func (mctx *mutatorContext) createVariations(variationNames []string, depChooser depChooser, local bool) []Module {
 	var ret []Module
-	modules, errs := mctx.context.createVariations(mctx.module, mctx.name, mctx.defaultVariation, variationNames, local)
+	modules, errs := mctx.context.createVariations(mctx.module, mctx.name, depChooser, variationNames, local)
 	if len(errs) > 0 {
 		mctx.errs = append(mctx.errs, errs...)
 	}
@@ -1091,8 +1097,13 @@ func (mctx *mutatorContext) CreateAliasVariation(aliasVariationName, targetVaria
 	panic(fmt.Errorf("no %q variation in module variations %q", targetVariationName, foundVariations))
 }
 
+func (mctx *mutatorContext) applyTransition(transition Transition) {
+	mctx.context.convertDepsToVariation(mctx.module, chooseDepByTransition(mctx.name, transition))
+}
+
 func (mctx *mutatorContext) SetDependencyVariation(variationName string) {
-	mctx.context.convertDepsToVariation(mctx.module, mctx.name, variationName, nil)
+	mctx.context.convertDepsToVariation(mctx.module, chooseDepExplicit(
+		mctx.name, variationName, nil))
 }
 
 func (mctx *mutatorContext) SetDefaultDependencyVariation(variationName *string) {
