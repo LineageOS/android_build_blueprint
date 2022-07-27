@@ -32,6 +32,8 @@ var (
 	addIdents        = new(identSet)
 	removeIdents     = new(identSet)
 	removeProperty   = flag.Bool("remove-property", false, "remove the property")
+	moveProperty     = flag.Bool("move-property", false, "moves contents of property into newLocation")
+	newLocation      string
 	setString        *string
 	addLiteral       *string
 )
@@ -40,6 +42,7 @@ func init() {
 	flag.Var(targetedModules, "m", "comma or whitespace separated list of modules on which to operate")
 	flag.Var(targetedProperty, "parameter", "alias to -property=`name`")
 	flag.Var(targetedProperty, "property", "fully qualified `name` of property to modify (default \"deps\")")
+	flag.StringVar(&newLocation, "newLocation", "", " use with moveProperty to move contents of -property into a property with name newLocation ")
 	flag.Var(addIdents, "a", "comma or whitespace separated list of identifiers to add")
 	flag.Var(stringPtrFlag{&addLiteral}, "add-literal", "a literal to add")
 	flag.Var(removeIdents, "r", "comma or whitespace separated list of identifiers to remove")
@@ -177,6 +180,8 @@ func processModule(module *parser.Module, moduleName string,
 	} else if *removeProperty {
 		// remove-property is used solely, so return here.
 		return parent.RemoveProperty(prop.Name), nil
+	} else if *moveProperty {
+		return parent.MovePropertyContents(prop.Name, newLocation), nil
 	}
 	m, errs := processParameter(prop.Value, targetedProperty.String(), moduleName, file)
 	modified = modified || m
@@ -329,6 +334,10 @@ func main() {
 	}()
 
 	flag.Parse()
+	if len(targetedProperty.parts) == 0 && *moveProperty {
+		report(fmt.Errorf("-move-property must specify property"))
+		return
+	}
 
 	if len(targetedProperty.parts) == 0 {
 		targetedProperty.Set("deps")
@@ -350,13 +359,23 @@ func main() {
 		return
 	}
 
-	if len(addIdents.idents) == 0 && len(removeIdents.idents) == 0 && setString == nil && addLiteral == nil && !*removeProperty {
-		report(fmt.Errorf("-a, -add-literal, -r, -remove-property or -str parameter is required"))
+	if len(addIdents.idents) == 0 && len(removeIdents.idents) == 0 && setString == nil && addLiteral == nil && !*removeProperty && !*moveProperty {
+		report(fmt.Errorf("-a, -add-literal, -r, -remove-property, -move-property, or -str parameter is required"))
 		return
 	}
 
 	if *removeProperty && (len(addIdents.idents) > 0 || len(removeIdents.idents) > 0 || setString != nil || addLiteral != nil) {
 		report(fmt.Errorf("-remove-property cannot be used with other parameter(s)"))
+		return
+	}
+
+	if *moveProperty && (len(addIdents.idents) > 0 || len(removeIdents.idents) > 0 || setString != nil || addLiteral != nil) {
+		report(fmt.Errorf("-move-property cannot be used with other parameter(s)"))
+		return
+	}
+
+	if *moveProperty && newLocation == "" {
+		report(fmt.Errorf("-move-property must specify newLocation"))
 		return
 	}
 
