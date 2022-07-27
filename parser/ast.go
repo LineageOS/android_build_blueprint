@@ -338,6 +338,42 @@ func (x *Map) RemoveProperty(propertyName string) (removed bool) {
 	return found
 }
 
+// MovePropertyContents moves the contents of propertyName into property newLocation
+// If property newLocation doesn't exist, MovePropertyContents renames propertyName as newLocation.
+// Otherwise, MovePropertyContents only supports moving contents that are a List of String.
+func (x *Map) MovePropertyContents(propertyName string, newLocation string) (removed bool) {
+	oldProp, oldFound, _ := x.getPropertyImpl(propertyName)
+	newProp, newFound, _ := x.getPropertyImpl(newLocation)
+
+	// newLoc doesn't exist, simply renaming property
+	if oldFound && !newFound {
+		oldProp.Name = newLocation
+		return oldFound
+	}
+
+	if oldFound {
+		old, oldOk := oldProp.Value.(*List)
+		new, newOk := newProp.Value.(*List)
+		if oldOk && newOk {
+			toBeMoved := make([]string, len(old.Values)) //
+			for i, p := range old.Values {
+				toBeMoved[i] = p.(*String).Value
+			}
+
+			for _, moved := range toBeMoved {
+				RemoveStringFromList(old, moved)
+				AddStringToList(new, moved)
+			}
+			// oldProp should now be empty and needs to be deleted
+			x.RemoveProperty(oldProp.Name)
+		} else {
+			print(`MovePropertyContents currently only supports moving PropertyName
+					with List of Strings into an existing newLocation with List of Strings\n`)
+		}
+	}
+	return oldFound
+}
+
 type List struct {
 	LBracePos scanner.Position
 	RBracePos scanner.Position
