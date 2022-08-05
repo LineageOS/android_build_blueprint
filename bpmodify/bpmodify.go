@@ -32,7 +32,7 @@ var (
 	addIdents        = new(identSet)
 	removeIdents     = new(identSet)
 	removeProperty   = flag.Bool("remove-property", false, "remove the property")
-	moveProperty     = flag.Bool("move-property", false, "moves contents of property into newLocation")
+	moveProperty     = flag.Bool("move-property", false, "moves contents of property into new-location")
 	newLocation      string
 	setString        *string
 	addLiteral       *string
@@ -42,7 +42,7 @@ func init() {
 	flag.Var(targetedModules, "m", "comma or whitespace separated list of modules on which to operate")
 	flag.Var(targetedProperty, "parameter", "alias to -property=`name`")
 	flag.Var(targetedProperty, "property", "fully qualified `name` of property to modify (default \"deps\")")
-	flag.StringVar(&newLocation, "newLocation", "", " use with moveProperty to move contents of -property into a property with name newLocation ")
+	flag.StringVar(&newLocation, "new-location", "", " use with moveProperty to move contents of -property into a property with name -new-location ")
 	flag.Var(addIdents, "a", "comma or whitespace separated list of identifiers to add")
 	flag.Var(stringPtrFlag{&addLiteral}, "add-literal", "a literal to add")
 	flag.Var(removeIdents, "r", "comma or whitespace separated list of identifiers to remove")
@@ -375,7 +375,7 @@ func main() {
 	}
 
 	if *moveProperty && newLocation == "" {
-		report(fmt.Errorf("-move-property must specify newLocation"))
+		report(fmt.Errorf("-move-property must specify -new-location"))
 		return
 	}
 
