@@ -115,7 +115,7 @@ type Expression interface {
 	// Copy returns a copy of the Expression that will not affect the original if mutated
 	Copy() Expression
 	String() string
-	// Type returns the underlying Type enum of the Expression if it were to be evalutated
+	// Type returns the underlying Type enum of the Expression if it were to be evaluated
 	Type() Type
 	// Eval returns an expression that is fully evaluated to a simple type (List, Map, String, or
 	// Bool).  It will return the same object for every call to Eval().
