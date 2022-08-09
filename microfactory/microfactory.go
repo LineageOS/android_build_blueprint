@@ -617,8 +617,6 @@ func rebuildMicrofactory(config *Config, mybin string) bool {
 	return true
 }
 
-// microfactory.bash will make a copy of this file renamed into the main package for use with `go run`
-func main() { Main() }
 func Main() {
 	var output, mybin string
 	var config Config
