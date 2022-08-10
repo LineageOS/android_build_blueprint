@@ -230,12 +230,20 @@ func processParameter(value parser.Expression, paramName, moduleName string,
 	}
 
 	if (*replaceProperty).size() != 0 {
-		list, ok := value.Eval().(*parser.List)
-		if !ok {
-			return false, []error{fmt.Errorf("expected parameter %s in module %s to be a list, found %s",
-				paramName, moduleName, value.Type().String())}
+		if list, ok := value.Eval().(*parser.List); ok {
+			return parser.ReplaceStringsInList(list, (*replaceProperty).oldNameToNewName), nil
+		} else if str, ok := value.Eval().(*parser.String); ok {
+			oldVal := str.Value
+			replacementValue := (*replaceProperty).oldNameToNewName[oldVal]
+			if replacementValue != "" {
+				str.Value = replacementValue
+				return true, nil
+			} else {
+				return false, nil
+			}
 		}
-		return parser.ReplaceStringsInList(list, (*replaceProperty).oldNameToNewName), nil
+		return false, []error{fmt.Errorf("expected parameter %s in module %s to be a list or string, found %s",
+			paramName, moduleName, value.Type().String())}
 	}
 	if len(addIdents.idents) > 0 || len(removeIdents.idents) > 0 {
 		list, ok := value.(*parser.List)
