@@ -46,7 +46,7 @@ func init() {
 	flag.Var(stringPtrFlag{&addLiteral}, "add-literal", "a literal to add")
 	flag.Var(removeIdents, "r", "comma or whitespace separated list of identifiers to remove")
 	flag.Var(stringPtrFlag{&setString}, "str", "set a string property")
-	flag.Var(replaceProperty, "replace-property", "property names to be replaced, in the form of oldName1:newName1,oldName2:newName2")
+	flag.Var(replaceProperty, "replace-property", "property names to be replaced, in the form of oldName1=newName1,oldName2=newName2")
 	flag.Usage = usage
 }
 
@@ -301,7 +301,8 @@ func targetedModule(name string) bool {
 	return false
 }
 func visitFile(path string, f os.FileInfo, err error) error {
-	if err == nil && f.Name() == "Blueprints" {
+	//TODO(dacek): figure out a better way to target intended .bp files without parsing errors
+	if err == nil && (f.Name() == "Blueprints" || strings.HasSuffix(f.Name(), ".bp")) {
 		err = processFile(path, nil, os.Stdout)
 	}
 	if err != nil {
@@ -374,6 +375,7 @@ func main() {
 		}
 	}
 }
+
 func diff(b1, b2 []byte) (data []byte, err error) {
 	f1, err := ioutil.TempFile("", "bpfmt")
 	if err != nil {
@@ -438,7 +440,7 @@ func (m *replacements) Set(s string) error {
 	m.oldNameToNewName = make(map[string]string)
 	for i := 0; i < length; i++ {
 
-		pair := strings.SplitN(pairs[i], ":", 2)
+		pair := strings.SplitN(pairs[i], "=", 2)
 		if len(pair) != 2 {
 			return fmt.Errorf("Invalid replacement pair %s", pairs[i])
 		}
