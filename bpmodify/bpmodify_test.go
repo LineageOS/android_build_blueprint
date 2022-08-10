@@ -395,6 +395,46 @@ var testCases = []struct {
 			}
 		`,
 		replaceProperty: "baz:baz_lib,foobar:foobar_lib",
+	}, {
+		name:     "replace property string value",
+		property: "name",
+		input: `
+			cc_foo {
+				name: "foo",
+				deps: ["baz"],
+				unchanged: ["baz"],
+				required: ["foobar"],
+			}
+		`,
+		output: `
+			cc_foo {
+				name: "foo_lib",
+				deps: ["baz"],
+				unchanged: ["baz"],
+				required: ["foobar"],
+			}
+		`,
+		replaceProperty: "foo:foo_lib",
+	}, {
+		name:     "replace property string and list values",
+		property: "name,deps",
+		input: `
+			cc_foo {
+				name: "foo",
+				deps: ["baz"],
+				unchanged: ["baz"],
+				required: ["foobar"],
+			}
+		`,
+		output: `
+			cc_foo {
+				name: "foo_lib",
+				deps: ["baz_lib"],
+				unchanged: ["baz"],
+				required: ["foobar"],
+			}
+		`,
+		replaceProperty: "foo:foo_lib,baz:baz_lib",
 	},
 }
 
