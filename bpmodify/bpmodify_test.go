@@ -31,6 +31,8 @@ var testCases = []struct {
 	setString       *string
 	removeProperty  bool
 	replaceProperty string
+	moveProperty    bool
+	newLocation     string
 }{
 	{
 		name: "add",
@@ -435,6 +437,45 @@ var testCases = []struct {
 			}
 		`,
 		replaceProperty: "foo:foo_lib,baz:baz_lib",
+	}, {
+		name: "move contents of property into non-existing property",
+		input: `
+			cc_foo {
+				name: "foo",
+				bar: ["barContents"],
+				}
+`,
+		output: `
+			cc_foo {
+				name: "foo",
+				baz: ["barContents"],
+			}
+		`,
+		property:     "bar",
+		moveProperty: true,
+		newLocation:  "baz",
+	}, {
+		name: "move contents of property into existing property",
+		input: `
+			cc_foo {
+				name: "foo",
+				baz: ["bazContents"],
+				bar: ["barContents"],
+			}
+		`,
+		output: `
+			cc_foo {
+				name: "foo",
+				baz: [
+					"bazContents",
+					"barContents",
+				],
+
+			}
+		`,
+		property:     "bar",
+		moveProperty: true,
+		newLocation:  "baz",
 	},
 }
 
@@ -452,6 +493,8 @@ func TestProcessModule(t *testing.T) {
 			addIdents.Set(testCase.addSet)
 			removeIdents.Set(testCase.removeSet)
 			removeProperty = &testCase.removeProperty
+			moveProperty = &testCase.moveProperty
+			newLocation = testCase.newLocation
 			setString = testCase.setString
 			addLiteral = testCase.addLiteral
 			replaceProperty.Set(testCase.replaceProperty)
