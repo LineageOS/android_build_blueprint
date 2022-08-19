@@ -373,7 +373,7 @@ var testCases = []struct {
 				],
 			}
 		`,
-		replaceProperty: "baz:baz_lib,foobar:foobar_lib",
+		replaceProperty: "baz=baz_lib,foobar=foobar_lib",
 	}, {
 		name:     "replace property multiple modules",
 		property: "deps,required",
@@ -396,7 +396,7 @@ var testCases = []struct {
 				required: ["foobar_lib"],
 			}
 		`,
-		replaceProperty: "baz:baz_lib,foobar:foobar_lib",
+		replaceProperty: "baz=baz_lib,foobar=foobar_lib",
 	}, {
 		name:     "replace property string value",
 		property: "name",
@@ -416,7 +416,7 @@ var testCases = []struct {
 				required: ["foobar"],
 			}
 		`,
-		replaceProperty: "foo:foo_lib",
+		replaceProperty: "foo=foo_lib",
 	}, {
 		name:     "replace property string and list values",
 		property: "name,deps",
@@ -436,7 +436,7 @@ var testCases = []struct {
 				required: ["foobar"],
 			}
 		`,
-		replaceProperty: "foo:foo_lib,baz:baz_lib",
+		replaceProperty: "foo=foo_lib,baz=baz_lib",
 	}, {
 		name: "move contents of property into non-existing property",
 		input: `
@@ -476,6 +476,26 @@ var testCases = []struct {
 		property:     "bar",
 		moveProperty: true,
 		newLocation:  "baz",
+	}, {
+		name: "replace nested",
+		input: `
+		cc_foo {
+			name: "foo",
+			foo: {
+				bar: "baz",
+			},
+		}
+	`,
+		output: `
+		cc_foo {
+			name: "foo",
+			foo: {
+				bar: "baz2",
+			},
+		}
+	`,
+		property:        "foo.bar",
+		replaceProperty: "baz=baz2",
 	},
 }
 
@@ -536,7 +556,7 @@ func TestProcessModule(t *testing.T) {
 }
 
 func TestReplacementsCycleError(t *testing.T) {
-	cycleString := "old1:new1,new1:old1"
+	cycleString := "old1=new1,new1=old1"
 	err := replaceProperty.Set(cycleString)
 
 	if err.Error() != "Duplicated replacement name new1" {
@@ -550,7 +570,7 @@ func TestReplacementsCycleError(t *testing.T) {
 }
 
 func TestReplacementsDuplicatedError(t *testing.T) {
-	cycleString := "a:b,a:c"
+	cycleString := "a=b,a=c"
 	err := replaceProperty.Set(cycleString)
 
 	if err.Error() != "Duplicated replacement name a" {
@@ -564,7 +584,7 @@ func TestReplacementsDuplicatedError(t *testing.T) {
 }
 
 func TestReplacementsMultipleReplacedToSame(t *testing.T) {
-	cycleString := "a:c,d:c"
+	cycleString := "a=c,d=c"
 	err := replaceProperty.Set(cycleString)
 
 	if err.Error() != "Duplicated replacement name c" {
