@@ -39,6 +39,9 @@ type Args struct {
 	Cpuprofile string
 	Memprofile string
 	TraceFile  string
+
+	BazelMode    bool
+	BazelModeDev bool
 }
 
 // Returns the list of dependencies the emitted Ninja files has. These can be
