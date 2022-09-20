@@ -18,7 +18,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -44,9 +43,10 @@ type Args struct {
 	BazelModeDev bool
 }
 
-// Returns the list of dependencies the emitted Ninja files has. These can be
-// written to the .d file for the output so that it is correctly rebuilt when
-// needed in case Blueprint is itself invoked from Ninja
+// RunBlueprint emits `args.OutFile` (a Ninja file) and returns the list of
+// its dependencies. These can be written to a `${args.OutFile}.d` file
+// so that it is correctly rebuilt when needed in case Blueprint is itself
+// invoked from Ninja
 func RunBlueprint(args Args, stopBefore StopBefore, ctx *blueprint.Context, config interface{}) []string {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
@@ -141,7 +141,7 @@ func RunBlueprint(args Args, stopBefore StopBefore, ctx *blueprint.Context, conf
 	ctx.BeginEvent("write_files")
 	defer ctx.EndEvent("write_files")
 	if args.EmptyNinjaFile {
-		if err := ioutil.WriteFile(joinPath(ctx.SrcDir(), args.OutFile), []byte(nil), outFilePermissions); err != nil {
+		if err := os.WriteFile(joinPath(ctx.SrcDir(), args.OutFile), []byte(nil), outFilePermissions); err != nil {
 			fatalf("error writing empty Ninja file: %s", err)
 		}
 	}
@@ -154,7 +154,7 @@ func RunBlueprint(args Args, stopBefore StopBefore, ctx *blueprint.Context, conf
 		buf = bufio.NewWriterSize(f, 16*1024*1024)
 		out = buf
 	} else {
-		out = ioutil.Discard.(io.StringWriter)
+		out = io.Discard.(io.StringWriter)
 	}
 
 	err = ctx.WriteBuildFile(out)
