@@ -1139,7 +1139,7 @@ var validParseTestCases = []struct {
 				Comments: []*Comment{
 					&Comment{
 						Comment: []string{"/* comment3", "		   comment4 */"},
-						Slash: mkpos(32, 5, 3),
+						Slash:   mkpos(32, 5, 3),
 					},
 					&Comment{
 						Comment: []string{"// comment5"},
@@ -1214,7 +1214,36 @@ func TestParseValidInput(t *testing.T) {
 	}
 }
 
-// TODO: Test error strings
+func TestParserError(t *testing.T) {
+	testcases := []struct {
+		name  string
+		input string
+		err   string
+	}{
+		{
+			name:  "invalid first token",
+			input: "\x00",
+			err:   "invalid character NUL",
+		},
+		// TODO: test more parser errors
+	}
+
+	for _, tt := range testcases {
+		t.Run(tt.name, func(t *testing.T) {
+			r := bytes.NewBufferString(tt.input)
+			_, errs := ParseAndEval("", r, NewScope(nil))
+			if len(errs) == 0 {
+				t.Fatalf("missing expected error")
+			}
+			if g, w := errs[0], tt.err; !strings.Contains(g.Error(), w) {
+				t.Errorf("expected error %q, got %q", w, g)
+			}
+			for _, err := range errs[1:] {
+				t.Errorf("got unexpected extra error %q", err)
+			}
+		})
+	}
+}
 
 func TestParserEndPos(t *testing.T) {
 	in := `

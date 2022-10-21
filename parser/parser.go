@@ -70,6 +70,7 @@ func parse(p *parser) (file *File, errs []error) {
 		}
 	}()
 
+	p.next()
 	defs := p.parseDefinitions()
 	p.accept(scanner.EOF)
 	errs = p.errors
@@ -100,6 +101,7 @@ func Parse(filename string, r io.Reader, scope *Scope) (file *File, errs []error
 
 func ParseExpression(r io.Reader) (value Expression, errs []error) {
 	p := newParser(r, NewScope(nil))
+	p.next()
 	value = p.parseExpression()
 	p.accept(scanner.EOF)
 	errs = p.errors
@@ -124,7 +126,6 @@ func newParser(r io.Reader, scope *Scope) *parser {
 	}
 	p.scanner.Mode = scanner.ScanIdents | scanner.ScanInts | scanner.ScanStrings |
 		scanner.ScanRawStrings | scanner.ScanComments
-	p.next()
 	return p
 }
 
