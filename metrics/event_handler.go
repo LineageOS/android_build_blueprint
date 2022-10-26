@@ -31,10 +31,8 @@ type EventHandler struct {
 	scopeStartTimes []time.Time
 }
 
-// _now wraps the time.Now() function. _now is declared for unit testing purpose.
-var _now = func() time.Time {
-	return time.Now()
-}
+// _now simply delegates to time.Now() function. _now is declared for unit testing purpose.
+var _now = time.Now
 
 // Event holds the performance metrics data of a single build event.
 type Event struct {
