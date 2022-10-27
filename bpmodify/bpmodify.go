@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"github.com/google/blueprint/parser"
 	"io"
 	"io/ioutil"
 	"os"
@@ -17,6 +16,8 @@ import (
 	"strings"
 	"syscall"
 	"unicode"
+
+	"github.com/google/blueprint/parser"
 )
 
 var (
@@ -34,6 +35,7 @@ var (
 	newLocation        string
 	setString          *string
 	addLiteral         *string
+	setBool            *string
 	replaceProperty    = new(replacements)
 )
 
@@ -43,10 +45,11 @@ func init() {
 	flag.StringVar(&newLocation, "new-location", "", " use with moveProperty to move contents of -property into a property with name -new-location ")
 	flag.Var(targetedProperties, "property", "comma-separated list of fully qualified `name`s of properties to modify (default \"deps\")")
 	flag.Var(addIdents, "a", "comma or whitespace separated list of identifiers to add")
-	flag.Var(stringPtrFlag{&addLiteral}, "add-literal", "a literal to add")
+	flag.Var(stringPtrFlag{&addLiteral}, "add-literal", "a literal to add to a list")
 	flag.Var(removeIdents, "r", "comma or whitespace separated list of identifiers to remove")
 	flag.Var(stringPtrFlag{&setString}, "str", "set a string property")
 	flag.Var(replaceProperty, "replace-property", "property names to be replaced, in the form of oldName1=newName1,oldName2=newName2")
+	flag.Var(stringPtrFlag{&setBool}, "set-bool", "a boolean value to set a property with (not a list)")
 	flag.Usage = usage
 }
 
@@ -154,6 +157,9 @@ func processModuleProperty(module *parser.Module, moduleName string,
 		} else if setString != nil {
 			// We setting a non-existent string property, so we need to create it first.
 			prop, modified, err = createRecursiveProperty(module, property.name(), property.prefixes(), &parser.String{})
+		} else if setBool != nil {
+			// We are setting a non-existent property, so we need to create it first.
+			prop, modified, err = createRecursiveProperty(module, property.name(), property.prefixes(), &parser.Bool{})
 		} else {
 			// We cannot find an existing prop, and we aren't adding anything to the prop,
 			// which means we must be removing something from a non-existing prop,
@@ -278,6 +284,21 @@ func processParameter(value parser.Expression, paramName, moduleName string,
 		}
 		list.Values = append(list.Values, value)
 		modified = true
+	} else if setBool != nil {
+		res, ok := value.(*parser.Bool)
+		if !ok {
+			return false, []error{fmt.Errorf("expected parameter %s in module %s to be bool, found %s",
+				paramName, moduleName, value.Type().String())}
+		}
+		if *setBool == "true" {
+			res.Value = true
+		} else if *setBool == "false" {
+			res.Value = false
+		} else {
+			return false, []error{fmt.Errorf("expected parameter %s to be true or false, found %s",
+				paramName, *setBool)}
+		}
+		modified = true
 	} else if setString != nil {
 		str, ok := value.(*parser.String)
 		if !ok {
@@ -345,7 +366,7 @@ func main() {
 		return
 	}
 
-	if len(addIdents.idents) == 0 && len(removeIdents.idents) == 0 && setString == nil && addLiteral == nil && !*removeProperty && !*moveProperty && (*replaceProperty).size() == 0 {
+	if len(addIdents.idents) == 0 && len(removeIdents.idents) == 0 && setString == nil && addLiteral == nil && !*removeProperty && !*moveProperty && (*replaceProperty).size() == 0 && setBool == nil {
 		report(fmt.Errorf("-a, -add-literal, -r, -remove-property, -move-property, replace-property or -str parameter is required"))
 		return
 	}
