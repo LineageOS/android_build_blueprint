@@ -14,10 +14,11 @@
 package main
 
 import (
-	"github.com/google/blueprint/parser"
-	"github.com/google/blueprint/proptools"
 	"strings"
 	"testing"
+
+	"github.com/google/blueprint/parser"
+	"github.com/google/blueprint/proptools"
 )
 
 var testCases = []struct {
@@ -29,6 +30,7 @@ var testCases = []struct {
 	removeSet       string
 	addLiteral      *string
 	setString       *string
+	setBool         *string
 	removeProperty  bool
 	replaceProperty string
 	moveProperty    bool
@@ -307,6 +309,39 @@ var testCases = []struct {
 		setString: proptools.StringPtr("bar"),
 	},
 	{
+		name: "set bool",
+		input: `
+			cc_foo {
+				name: "foo",
+			}
+		`,
+		output: `
+			cc_foo {
+				name: "foo",
+				foo: true,
+			}
+		`,
+		property: "foo",
+		setBool:  proptools.StringPtr("true"),
+	},
+	{
+		name: "set existing bool",
+		input: `
+			cc_foo {
+				name: "foo",
+				foo: true,
+			}
+		`,
+		output: `
+			cc_foo {
+				name: "foo",
+				foo: false,
+			}
+		`,
+		property: "foo",
+		setBool:  proptools.StringPtr("false"),
+	},
+	{
 		name: "remove existing property",
 		input: `
 			cc_foo {
@@ -516,6 +551,7 @@ func TestProcessModule(t *testing.T) {
 			moveProperty = &testCase.moveProperty
 			newLocation = testCase.newLocation
 			setString = testCase.setString
+			setBool = testCase.setBool
 			addLiteral = testCase.addLiteral
 			replaceProperty.Set(testCase.replaceProperty)
 
