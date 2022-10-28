@@ -693,9 +693,10 @@ func (s *singleton) GenerateBuildActions(ctx blueprint.SingletonContext) {
 
 		// Build the main build.ninja
 		ctx.Build(pctx, blueprint.BuildParams{
-			Rule:    generateBuildNinja,
-			Outputs: i.Outputs,
-			Inputs:  i.Inputs,
+			Rule:      generateBuildNinja,
+			Outputs:   i.Outputs,
+			Inputs:    i.Inputs,
+			OrderOnly: i.OrderOnlyInputs,
 			Args: map[string]string{
 				"builder": primaryBuilderFile,
 				"env":     envAssignments,
