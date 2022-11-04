@@ -1798,7 +1798,7 @@ func (c *Context) resolveDependencies(ctx context.Context, config interface{}) (
 	pprof.Do(ctx, pprof.Labels("blueprint", "ResolveDependencies"), func(ctx context.Context) {
 		c.initProviders()
 
-		c.liveGlobals = newLiveTracker(config)
+		c.liveGlobals = newLiveTracker(c, config)
 
 		deps, errs = c.generateSingletonBuildActions(config, c.preSingletonInfo, c.liveGlobals)
 		if len(errs) > 0 {
@@ -4413,7 +4413,7 @@ func (c *Context) writeLocalBuildActions(nw *ninjaWriter,
 		// A localVariable doesn't need the package names or config to
 		// determine its name or value.
 		name := v.fullName(nil)
-		value, err := v.value(nil)
+		value, err := v.value(nil, nil)
 		if err != nil {
 			panic(err)
 		}
