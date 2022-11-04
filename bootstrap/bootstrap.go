@@ -149,7 +149,7 @@ var (
 		},
 		"depfile")
 
-	_ = pctx.VariableFunc("ToolDir", func(config interface{}) (string, error) {
+	_ = pctx.VariableFunc("ToolDir", func(ctx blueprint.VariableFuncContext, config interface{}) (string, error) {
 		return config.(BootstrapConfig).HostToolDir(), nil
 	})
 )

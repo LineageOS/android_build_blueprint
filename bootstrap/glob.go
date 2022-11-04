@@ -44,7 +44,7 @@ import (
 // in a build failure with a "missing and no known rule to make it" error.
 
 var (
-	_ = pctx.VariableFunc("globCmd", func(config interface{}) (string, error) {
+	_ = pctx.VariableFunc("globCmd", func(ctx blueprint.VariableFuncContext, config interface{}) (string, error) {
 		return filepath.Join(config.(BootstrapConfig).SoongOutDir(), "bpglob"), nil
 	})
 
