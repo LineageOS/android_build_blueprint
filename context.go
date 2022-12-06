@@ -137,6 +137,31 @@ type Context struct {
 
 	// Can be set by tests to avoid invalidating Module values after mutators.
 	skipCloneModulesAfterMutators bool
+
+	// String values that can be used to gate build graph traversal
+	includeTags *IncludeTags
+}
+
+// A container for String keys. The keys can be used to gate build graph traversal
+type IncludeTags map[string]bool
+
+func (tags *IncludeTags) Add(names ...string) {
+	for _, name := range names {
+		(*tags)[name] = true
+	}
+}
+
+func (tags *IncludeTags) Contains(tag string) bool {
+	_, exists := (*tags)[tag]
+	return exists
+}
+
+func (c *Context) AddIncludeTags(names ...string) {
+	c.includeTags.Add(names...)
+}
+
+func (c *Context) ContainsIncludeTag(name string) bool {
+	return c.includeTags.Contains(name)
 }
 
 // An Error describes a problem that was encountered that is related to a
@@ -399,6 +424,7 @@ func newContext() *Context {
 		globs:              make(map[globKey]pathtools.GlobResult),
 		fs:                 pathtools.OsFs,
 		finishedMutators:   make(map[*mutatorInfo]bool),
+		includeTags: &IncludeTags{},
 		outDir:             nil,
 		requiredNinjaMajor: 1,
 		requiredNinjaMinor: 7,
@@ -940,6 +966,33 @@ func (c *Context) ParseBlueprintsFiles(rootFile string,
 	return c.ParseFileList(baseDir, pathsToParse, config)
 }
 
+// Returns a boolean for whether this file should be analyzed
+// Evaluates to true if the file either
+// 1. does not contain a blueprint_package_includes
+// 2. contains a blueprint_package_includes and all requested tags are set
+// This should be processed before adding any modules to the build graph
+func shouldVisitFile(c *Context, file *parser.File) (bool, []error) {
+	for _, def := range file.Defs {
+		switch def := def.(type) {
+		case *parser.Module:
+			if def.Type != "blueprint_package_includes" {
+				continue
+			}
+			module, errs := processModuleDef(def, file.Name, c.moduleFactories, nil, c.ignoreUnknownModuleTypes)
+			if len(errs) > 0 {
+				// This file contains errors in blueprint_package_includes
+				// Visit anyways so that we can report errors on other modules in the file
+				return true, errs
+			}
+			logicModule, _ := c.cloneLogicModule(module)
+			pi := logicModule.(*PackageIncludes)
+			return pi.MatchesIncludeTags(c), []error{}
+		}
+	}
+	return true, []error{}
+}
+
+
 func (c *Context) ParseFileList(rootDir string, filePaths []string,
 	config interface{}) (deps []string, errs []error) {
 
@@ -991,6 +1044,15 @@ func (c *Context) ParseFileList(rootDir string, filePaths []string,
 				}
 			}
 			return nil
+		}
+		shouldVisit, errs := shouldVisitFile(c, file)
+		if len(errs) > 0 {
+			atomic.AddUint32(&numErrs, uint32(len(errs)))
+			errsCh <- errs
+		}
+		if !shouldVisit {
+			// TODO: Write a file that lists the skipped bp files
+			return
 		}
 
 		for _, def := range file.Defs {
@@ -4540,3 +4602,49 @@ var singletonHeaderTemplate = `# # # # # # # # # # # # # # # # # # # # # # # # #
 Singleton: {{.name}}
 Factory:   {{.goFactory}}
 `
+
+// Blueprint module type that can be used to gate blueprint files beneath this directory
+type PackageIncludes struct {
+	properties struct {
+		// Package will be included if all include tags in this list are set
+		Match_all []string
+	}
+	name *string `blueprint:"mutated"`
+}
+
+func (pi *PackageIncludes) Name() string {
+	return proptools.String(pi.name)
+}
+
+// This module type does not have any build actions
+func (pi *PackageIncludes) GenerateBuildActions(ctx ModuleContext) {
+}
+
+func newPackageIncludesFactory() (Module, []interface{}) {
+	module := &PackageIncludes{}
+	AddLoadHook(module, func(ctx LoadHookContext) {
+		module.name = proptools.StringPtr(ctx.ModuleDir() + "_includes") // Generate a synthetic name
+	})
+	return module, []interface{}{&module.properties}
+}
+
+func RegisterPackageIncludesModuleType(ctx *Context) {
+	ctx.RegisterModuleType("blueprint_package_includes", newPackageIncludesFactory)
+}
+
+func (pi *PackageIncludes) MatchAll() []string {
+	return pi.properties.Match_all
+}
+
+// Returns true if all requested include tags are set in the Context object
+func (pi *PackageIncludes) MatchesIncludeTags(ctx *Context) bool {
+	if len(pi.MatchAll()) == 0 {
+		ctx.ModuleErrorf(pi, "Match_all must be a non-empty list")
+	}
+	for _, includeTag := range pi.MatchAll() {
+		if !ctx.ContainsIncludeTag(includeTag) {
+			return false
+		}
+	}
+	return true
+}
