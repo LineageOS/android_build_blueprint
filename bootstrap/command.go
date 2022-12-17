@@ -38,11 +38,6 @@ type Args struct {
 	Cpuprofile string
 	Memprofile string
 	TraceFile  string
-
-	BazelMode                bool
-	BazelModeDev             bool
-	BazelModeStaging         bool
-	BazelForceEnabledModules string
 }
 
 // RunBlueprint emits `args.OutFile` (a Ninja file) and returns the list of
