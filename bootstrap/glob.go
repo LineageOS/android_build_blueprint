@@ -237,6 +237,8 @@ func generateGlobNinjaFile(glob *GlobSingleton, config interface{}) ([]byte, []e
 		return nil, errs
 	}
 
+	// PrepareBuildActions() will write $OUTDIR/soong/globs/$m/$i files
+	// where $m=bp2build|build and $i=0..numGlobBuckets
 	extraDeps, errs = ctx.PrepareBuildActions(config)
 	if len(extraDeps) > 0 {
 		return nil, []error{fmt.Errorf("shouldn't have extra deps")}
