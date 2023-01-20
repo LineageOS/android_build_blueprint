@@ -118,7 +118,7 @@ func parseNinjaString(scope scope, str string) (ninjaString, error) {
 		r := rune(str[i])
 		state, err = state(parseState, i, r)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error parsing ninja string %q: %s", str, err)
 		}
 	}
 
