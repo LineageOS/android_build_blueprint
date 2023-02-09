@@ -146,6 +146,7 @@ func RunBlueprint(args Args, stopBefore StopBefore, ctx *blueprint.Context, conf
 		if err != nil {
 			fatalf("error opening Ninja file: %s", err)
 		}
+		defer f.Close()
 		buf = bufio.NewWriterSize(f, 16*1024*1024)
 		out = buf
 	} else {
