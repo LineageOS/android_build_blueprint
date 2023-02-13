@@ -50,15 +50,15 @@ const MockModuleListFile = "bplist"
 // through a series of four phases.  Each phase corresponds with a some methods
 // on the Context object
 //
-//         Phase                            Methods
-//      ------------      -------------------------------------------
-//   1. Registration         RegisterModuleType, RegisterSingletonType
+//	      Phase                            Methods
+//	   ------------      -------------------------------------------
+//	1. Registration         RegisterModuleType, RegisterSingletonType
 //
-//   2. Parse                    ParseBlueprintsFiles, Parse
+//	2. Parse                    ParseBlueprintsFiles, Parse
 //
-//   3. Generate            ResolveDependencies, PrepareBuildActions
+//	3. Generate            ResolveDependencies, PrepareBuildActions
 //
-//   4. Write                           WriteBuildFile
+//	4. Write                           WriteBuildFile
 //
 // The registration phase prepares the context to process Blueprints files
 // containing various types of modules.  The parse phase reads in one or more
@@ -424,7 +424,7 @@ func newContext() *Context {
 		globs:              make(map[globKey]pathtools.GlobResult),
 		fs:                 pathtools.OsFs,
 		finishedMutators:   make(map[*mutatorInfo]bool),
-		includeTags: &IncludeTags{},
+		includeTags:        &IncludeTags{},
 		outDir:             nil,
 		requiredNinjaMajor: 1,
 		requiredNinjaMinor: 7,
@@ -481,32 +481,32 @@ type ModuleFactory func() (m Module, propertyStructs []interface{})
 //
 // As an example, the follow code:
 //
-//   type myModule struct {
-//       properties struct {
-//           Foo string
-//           Bar []string
-//       }
-//   }
+//	type myModule struct {
+//	    properties struct {
+//	        Foo string
+//	        Bar []string
+//	    }
+//	}
 //
-//   func NewMyModule() (blueprint.Module, []interface{}) {
-//       module := new(myModule)
-//       properties := &module.properties
-//       return module, []interface{}{properties}
-//   }
+//	func NewMyModule() (blueprint.Module, []interface{}) {
+//	    module := new(myModule)
+//	    properties := &module.properties
+//	    return module, []interface{}{properties}
+//	}
 //
-//   func main() {
-//       ctx := blueprint.NewContext()
-//       ctx.RegisterModuleType("my_module", NewMyModule)
-//       // ...
-//   }
+//	func main() {
+//	    ctx := blueprint.NewContext()
+//	    ctx.RegisterModuleType("my_module", NewMyModule)
+//	    // ...
+//	}
 //
 // would support parsing a module defined in a Blueprints file as follows:
 //
-//   my_module {
-//       name: "myName",
-//       foo:  "my foo string",
-//       bar:  ["my", "bar", "strings"],
-//   }
+//	my_module {
+//	    name: "myName",
+//	    foo:  "my foo string",
+//	    bar:  ["my", "bar", "strings"],
+//	}
 //
 // The factory function may be called from multiple goroutines.  Any accesses
 // to global variables must be synchronized.
@@ -991,7 +991,6 @@ func shouldVisitFile(c *Context, file *parser.File) (bool, []error) {
 	}
 	return true, []error{}
 }
-
 
 func (c *Context) ParseFileList(rootDir string, filePaths []string,
 	config interface{}) (deps []string, errs []error) {
@@ -4453,6 +4452,10 @@ func (c *Context) writeAllSingletonActions(nw *ninjaWriter) error {
 	}
 
 	return nil
+}
+
+func (c *Context) GetEventHandler() *metrics.EventHandler {
+	return c.EventHandler
 }
 
 func (c *Context) BeginEvent(name string) {
