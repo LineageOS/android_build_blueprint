@@ -2820,6 +2820,8 @@ func (c *Context) runMutators(ctx context.Context, config interface{}) (deps []s
 	pprof.Do(ctx, pprof.Labels("blueprint", "runMutators"), func(ctx context.Context) {
 		for _, mutator := range c.mutatorInfo {
 			pprof.Do(ctx, pprof.Labels("mutator", mutator.name), func(context.Context) {
+				c.BeginEvent(mutator.name)
+				defer c.EndEvent(mutator.name)
 				var newDeps []string
 				if mutator.topDownMutator != nil {
 					newDeps, errs = c.runMutator(config, mutator, topDownMutator)
