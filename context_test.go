@@ -174,11 +174,11 @@ func TestContextParse(t *testing.T) {
 	}
 }
 
-// |===B---D       - represents a non-walkable edge
-// A               = represents a walkable edge
-// |===C===E---G
-//     |       |   A should not be visited because it's the root node.
-//     |===F===|   B, D and E should not be walked.
+// > |===B---D       - represents a non-walkable edge
+// > A               = represents a walkable edge
+// > |===C===E---G
+// >     |       |   A should not be visited because it's the root node.
+// >     |===F===|   B, D and E should not be walked.
 func TestWalkDeps(t *testing.T) {
 	ctx := NewContext()
 	ctx.MockFileSystem(map[string][]byte{
@@ -187,31 +187,31 @@ func TestWalkDeps(t *testing.T) {
 			    name: "A",
 			    deps: ["B", "C"],
 			}
-			
+
 			bar_module {
 			    name: "B",
 			    deps: ["D"],
 			}
-			
+
 			foo_module {
 			    name: "C",
 			    deps: ["E", "F"],
 			}
-			
+
 			foo_module {
 			    name: "D",
 			}
-			
+
 			bar_module {
 			    name: "E",
 			    deps: ["G"],
 			}
-			
+
 			foo_module {
 			    name: "F",
 			    deps: ["G"],
 			}
-			
+
 			foo_module {
 			    name: "G",
 			}
@@ -249,12 +249,12 @@ func TestWalkDeps(t *testing.T) {
 	}
 }
 
-// |===B---D           - represents a non-walkable edge
-// A                   = represents a walkable edge
-// |===C===E===\       A should not be visited because it's the root node.
-//     |       |       B, D should not be walked.
-//     |===F===G===H   G should be visited multiple times
-//         \===/       H should only be visited once
+// > |===B---D           - represents a non-walkable edge
+// > A                   = represents a walkable edge
+// > |===C===E===\       A should not be visited because it's the root node.
+// >     |       |       B, D should not be walked.
+// >     |===F===G===H   G should be visited multiple times
+// >         \===/       H should only be visited once
 func TestWalkDepsDuplicates(t *testing.T) {
 	ctx := NewContext()
 	ctx.MockFileSystem(map[string][]byte{
@@ -330,11 +330,11 @@ func TestWalkDepsDuplicates(t *testing.T) {
 	}
 }
 
-//                     - represents a non-walkable edge
-// A                   = represents a walkable edge
-// |===B-------\       A should not be visited because it's the root node.
-//     |       |       B -> D should not be walked.
-//     |===C===D===E   B -> C -> D -> E should be walked
+// >                     - represents a non-walkable edge
+// > A                   = represents a walkable edge
+// > |===B-------\       A should not be visited because it's the root node.
+// >     |       |       B -> D should not be walked.
+// >     |===C===D===E   B -> C -> D -> E should be walked
 func TestWalkDepsDuplicates_IgnoreFirstPath(t *testing.T) {
 	ctx := NewContext()
 	ctx.MockFileSystem(map[string][]byte{
@@ -589,7 +589,7 @@ func TestParseFailsForModuleWithoutName(t *testing.T) {
 			foo_module {
 			    name: "A",
 			}
-			
+
 			bar_module {
 			    deps: ["A"],
 			}
@@ -1107,24 +1107,24 @@ func TestPackageIncludes(t *testing.T) {
 		"dir1/Android.bp": []byte(dir1_foo_bp),
 		"dir2/Android.bp": []byte(dir2_foo_bp),
 	}
-	testCases := []struct{
-		desc string
+	testCases := []struct {
+		desc        string
 		includeTags []string
 		expectedDir string
 		expectedErr string
 	}{
 		{
-			desc: "use_dir1 is set, use dir1 foo",
+			desc:        "use_dir1 is set, use dir1 foo",
 			includeTags: []string{"use_dir1"},
 			expectedDir: "dir1",
 		},
 		{
-			desc: "use_dir2 is set, use dir2 foo",
+			desc:        "use_dir2 is set, use dir2 foo",
 			includeTags: []string{"use_dir2"},
 			expectedDir: "dir2",
 		},
 		{
-			desc: "duplicate module error if both use_dir1 and use_dir2 are set",
+			desc:        "duplicate module error if both use_dir1 and use_dir2 are set",
 			includeTags: []string{"use_dir1", "use_dir2"},
 			expectedDir: "",
 			expectedErr: `module "foo" already defined`,
