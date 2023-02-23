@@ -139,9 +139,8 @@ func RunBlueprint(args Args, stopBefore StopBefore, ctx *blueprint.Context, conf
 		if err := os.WriteFile(joinPath(ctx.SrcDir(), args.OutFile), []byte(nil), outFilePermissions); err != nil {
 			fatalf("error writing empty Ninja file: %s", err)
 		}
-	}
-
-	if !args.EmptyNinjaFile {
+		out = io.Discard.(io.StringWriter)
+	} else {
 		f, err := os.OpenFile(joinPath(ctx.SrcDir(), args.OutFile), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, outFilePermissions)
 		if err != nil {
 			fatalf("error opening Ninja file: %s", err)
@@ -149,8 +148,6 @@ func RunBlueprint(args Args, stopBefore StopBefore, ctx *blueprint.Context, conf
 		defer f.Close()
 		buf = bufio.NewWriterSize(f, 16*1024*1024)
 		out = buf
-	} else {
-		out = io.Discard.(io.StringWriter)
 	}
 
 	if err := ctx.WriteBuildFile(out); err != nil {
