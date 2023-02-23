@@ -325,11 +325,11 @@ func (n varNinjaString) Variables() []Variable {
 	return n.variables
 }
 
-func (l literalNinjaString) Value(pkgNames map[*packageContext]string) string {
+func (l literalNinjaString) Value(_ map[*packageContext]string) string {
 	return defaultEscaper.Replace(string(l))
 }
 
-func (l literalNinjaString) ValueWithEscaper(w io.StringWriter, pkgNames map[*packageContext]string,
+func (l literalNinjaString) ValueWithEscaper(w io.StringWriter, _ map[*packageContext]string,
 	escaper *strings.Replacer) {
 	w.WriteString(escaper.Replace(string(l)))
 }
