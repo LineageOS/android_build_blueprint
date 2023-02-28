@@ -56,6 +56,9 @@ func (e Event) RuntimeNanoseconds() uint64 {
 // call to End (though other events may begin and end before this event ends).
 // Events within the same scope must have unique names.
 func (h *EventHandler) Begin(name string) {
+	if strings.ContainsRune(name, '.') {
+		panic(fmt.Sprintf("illegal event name (avoid dot): %s", name))
+	}
 	h.scopeIds = append(h.scopeIds, name)
 	h.scopeStartTimes = append(h.scopeStartTimes, _now())
 }
@@ -71,7 +74,7 @@ func (h *EventHandler) Do(name string, f func()) {
 // themselves been marked completed.
 func (h *EventHandler) End(name string) {
 	if len(h.scopeIds) == 0 || name != h.scopeIds[len(h.scopeIds)-1] {
-		panic(fmt.Errorf("Unexpected scope end '%s'. Current scope: (%s)",
+		panic(fmt.Errorf("unexpected scope end '%s'. Current scope: (%s)",
 			name, h.scopeIds))
 	}
 	event := Event{
@@ -94,14 +97,14 @@ func (h *EventHandler) End(name string) {
 func (h *EventHandler) CompletedEvents() []Event {
 	if len(h.scopeIds) > 0 {
 		panic(fmt.Errorf(
-			"Retrieving events before all events have been closed. Current scope: (%s)",
+			"retrieving events before all events have been closed. Current scope: (%s)",
 			h.scopeIds))
 	}
 	// Validate no two events have the same full id.
 	ids := map[string]struct{}{}
 	for _, event := range h.completedEvents {
 		if _, containsId := ids[event.Id]; containsId {
-			panic(fmt.Errorf("Duplicate event registered: %s", event.Id))
+			panic(fmt.Errorf("duplicate event registered: %s", event.Id))
 		}
 		ids[event.Id] = struct{}{}
 	}
