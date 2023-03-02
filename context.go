@@ -3757,32 +3757,30 @@ func (c *Context) AllTargets() (map[string]string, error) {
 	}
 
 	targets := map[string]string{}
-
-	// Collect all the module build targets.
-	for _, module := range c.moduleInfo {
-		for _, buildDef := range module.actionDefs.buildDefs {
+	var collectTargets = func(actionDefs localBuildActions) error {
+		for _, buildDef := range actionDefs.buildDefs {
 			ruleName := buildDef.Rule.fullName(c.pkgNames)
 			for _, output := range append(buildDef.Outputs, buildDef.ImplicitOutputs...) {
 				outputValue, err := output.Eval(c.globalVariables)
 				if err != nil {
-					return nil, err
+					return err
 				}
 				targets[outputValue] = ruleName
 			}
+		}
+		return nil
+	}
+	// Collect all the module build targets.
+	for _, module := range c.moduleInfo {
+		if err := collectTargets(module.actionDefs); err != nil {
+			return nil, err
 		}
 	}
 
 	// Collect all the singleton build targets.
 	for _, info := range c.singletonInfo {
-		for _, buildDef := range info.actionDefs.buildDefs {
-			ruleName := buildDef.Rule.fullName(c.pkgNames)
-			for _, output := range append(buildDef.Outputs, buildDef.ImplicitOutputs...) {
-				outputValue, err := output.Eval(c.globalVariables)
-				if err != nil {
-					return nil, err
-				}
-				targets[outputValue] = ruleName
-			}
+		if err := collectTargets(info.actionDefs); err != nil {
+			return nil, err
 		}
 	}
 
