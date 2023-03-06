@@ -16,7 +16,6 @@ package bootstrap
 
 import (
 	"fmt"
-	"go/build"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -33,21 +32,15 @@ var (
 	pluginGenSrcCmd = pctx.StaticVariable("pluginGenSrcCmd", filepath.Join("$ToolDir", "loadplugins"))
 
 	parallelCompile = pctx.StaticVariable("parallelCompile", func() string {
-		// Parallel compilation is only supported on >= go1.9
-		for _, r := range build.Default.ReleaseTags {
-			if r == "go1.9" {
-				numCpu := runtime.NumCPU()
-				// This will cause us to recompile all go programs if the
-				// number of cpus changes. We don't get a lot of benefit from
-				// higher values, so cap this to make it cheaper to move trees
-				// between machines.
-				if numCpu > 8 {
-					numCpu = 8
-				}
-				return fmt.Sprintf("-c %d", numCpu)
-			}
+		numCpu := runtime.NumCPU()
+		// This will cause us to recompile all go programs if the
+		// number of cpus changes. We don't get a lot of benefit from
+		// higher values, so cap this to make it cheaper to move trees
+		// between machines.
+		if numCpu > 8 {
+			numCpu = 8
 		}
-		return ""
+		return fmt.Sprintf("-c %d", numCpu)
 	}())
 
 	compile = pctx.StaticRule("compile",
