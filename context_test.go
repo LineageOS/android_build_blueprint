@@ -1131,27 +1131,144 @@ func TestPackageIncludes(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		ctx := NewContext()
-		// Register mock FS
-		ctx.MockFileSystem(mockFs)
-		// Register module types
-		ctx.RegisterModuleType("foo_module", newFooModule)
-		RegisterPackageIncludesModuleType(ctx)
-		// Add include tags for test case
-		ctx.AddIncludeTags(tc.includeTags...)
-		// Run test
-		_, actualErrs := ctx.ParseFileList(".", []string{"dir1/Android.bp", "dir2/Android.bp"}, nil)
-		// Evaluate
-		if !strings.Contains(fmt.Sprintf("%s", actualErrs), fmt.Sprintf("%s", tc.expectedErr)) {
-			t.Errorf("Expected errors: %s, got errors: %s\n", tc.expectedErr, actualErrs)
-		}
-		if tc.expectedErr != "" {
-			continue // expectedDir check not necessary
-		}
-		actualBpFile := ctx.moduleGroupFromName("foo", nil).modules.firstModule().relBlueprintsFile
-		if tc.expectedDir != filepath.Dir(actualBpFile) {
-			t.Errorf("Expected foo from %s, got %s\n", tc.expectedDir, filepath.Dir(actualBpFile))
-		}
+		t.Run(tc.desc, func(t *testing.T) {
+			ctx := NewContext()
+			// Register mock FS
+			ctx.MockFileSystem(mockFs)
+			// Register module types
+			ctx.RegisterModuleType("foo_module", newFooModule)
+			RegisterPackageIncludesModuleType(ctx)
+			// Add include tags for test case
+			ctx.AddIncludeTags(tc.includeTags...)
+			// Run test
+			_, actualErrs := ctx.ParseFileList(".", []string{"dir1/Android.bp", "dir2/Android.bp"}, nil)
+			// Evaluate
+			if !strings.Contains(fmt.Sprintf("%s", actualErrs), fmt.Sprintf("%s", tc.expectedErr)) {
+				t.Errorf("Expected errors: %s, got errors: %s\n", tc.expectedErr, actualErrs)
+			}
+			if tc.expectedErr != "" {
+				return // expectedDir check not necessary
+			}
+			actualBpFile := ctx.moduleGroupFromName("foo", nil).modules.firstModule().relBlueprintsFile
+			if tc.expectedDir != filepath.Dir(actualBpFile) {
+				t.Errorf("Expected foo from %s, got %s\n", tc.expectedDir, filepath.Dir(actualBpFile))
+			}
+		})
 	}
 
+}
+
+func TestExtractPhonys(t *testing.T) {
+	outputs := func(names ...string) []ninjaString {
+		r := make([]ninjaString, len(names))
+		for i, name := range names {
+			r[i] = literalNinjaString(name)
+		}
+		return r
+	}
+	b := func(output string, inputs []string, orderOnlyDeps []string) *buildDef {
+		return &buildDef{
+			Outputs:   outputs(output),
+			Inputs:    outputs(inputs...),
+			OrderOnly: outputs(orderOnlyDeps...),
+		}
+	}
+	m := func(bs ...*buildDef) *moduleInfo {
+		return &moduleInfo{actionDefs: localBuildActions{buildDefs: bs}}
+	}
+	type testcase struct {
+		modules        []*moduleInfo
+		expectedPhonys []*buildDef
+		conversions    map[string][]ninjaString
+	}
+	testCases := []testcase{{
+		modules: []*moduleInfo{
+			m(b("A", nil, []string{"d"})),
+			m(b("B", nil, []string{"d"})),
+		},
+		expectedPhonys: []*buildDef{
+			b("phony-0", []string{"d"}, nil),
+		},
+		conversions: map[string][]ninjaString{
+			"A": outputs("phony-0"),
+			"B": outputs("phony-0"),
+		},
+	}, {
+		modules: []*moduleInfo{
+			m(b("A", nil, []string{"a"})),
+			m(b("B", nil, []string{"b"})),
+		},
+	}, {
+		modules: []*moduleInfo{
+			m(b("A", nil, []string{"a"})),
+			m(b("B", nil, []string{"b"})),
+			m(b("C", nil, []string{"a"})),
+		},
+		expectedPhonys: []*buildDef{b("phony-0", []string{"a"}, nil)},
+		conversions: map[string][]ninjaString{
+			"A": outputs("phony-0"),
+			"B": outputs("b"),
+			"C": outputs("phony-0"),
+		},
+	}, {
+		modules: []*moduleInfo{
+			m(b("A", nil, []string{"a", "b"}),
+				b("B", nil, []string{"a", "b"})),
+			m(b("C", nil, []string{"a", "c"}),
+				b("D", nil, []string{"a", "c"})),
+		},
+		expectedPhonys: []*buildDef{
+			b("phony-0", []string{"a", "b"}, nil),
+			b("phony-1", []string{"a", "c"}, nil)},
+		conversions: map[string][]ninjaString{
+			"A": outputs("phony-0"),
+			"B": outputs("phony-0"),
+			"C": outputs("phony-1"),
+			"D": outputs("phony-1"),
+		},
+	}}
+	for index, tc := range testCases {
+		t.Run(fmt.Sprintf("TestCase-%d", index), func(t *testing.T) {
+			ctx := NewContext()
+			actualPhonys := ctx.extractPhonys(tc.modules)
+			if len(actualPhonys.variables) != 0 {
+				t.Errorf("No variables expected but found %v", actualPhonys.variables)
+			}
+			if len(actualPhonys.rules) != 0 {
+				t.Errorf("No rules expected but found %v", actualPhonys.rules)
+			}
+			if e, a := len(tc.expectedPhonys), len(actualPhonys.buildDefs); e != a {
+				t.Errorf("Expected %d build statements but got %d", e, a)
+			}
+			for i := 0; i < len(tc.expectedPhonys); i++ {
+				a := actualPhonys.buildDefs[i]
+				e := tc.expectedPhonys[i]
+				if !reflect.DeepEqual(e.Outputs, a.Outputs) {
+					t.Errorf("phonys expected %v but actualPhonys %v", e.Outputs, a.Outputs)
+				}
+				if !reflect.DeepEqual(e.Inputs, a.Inputs) {
+					t.Errorf("phonys expected %v but actualPhonys %v", e.Inputs, a.Inputs)
+				}
+			}
+			find := func(k string) *buildDef {
+				for _, m := range tc.modules {
+					for _, b := range m.actionDefs.buildDefs {
+						if reflect.DeepEqual(b.Outputs, outputs(k)) {
+							return b
+						}
+					}
+				}
+				return nil
+			}
+			for k, conversion := range tc.conversions {
+				actual := find(k)
+				if actual == nil {
+					t.Errorf("Couldn't find %s", k)
+				}
+				if !reflect.DeepEqual(actual.OrderOnly, conversion) {
+					t.Errorf("expected %s.OrderOnly = %v but got %v", k, conversion, actual.OrderOnly)
+				}
+			}
+		})
+	}
 }
