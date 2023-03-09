@@ -512,7 +512,7 @@ type ModuleFactory func() (m Module, propertyStructs []interface{})
 // to global variables must be synchronized.
 func (c *Context) RegisterModuleType(name string, factory ModuleFactory) {
 	if _, present := c.moduleFactories[name]; present {
-		panic(errors.New("module type name is already registered"))
+		panic(fmt.Errorf("module type %q is already registered", name))
 	}
 	c.moduleFactories[name] = factory
 }
@@ -533,7 +533,7 @@ type SingletonFactory func() Singleton
 func (c *Context) RegisterSingletonType(name string, factory SingletonFactory) {
 	for _, s := range c.singletonInfo {
 		if s.name == name {
-			panic(errors.New("singleton name is already registered"))
+			panic(fmt.Errorf("singleton %q is already registered", name))
 		}
 	}
 
@@ -555,7 +555,7 @@ func (c *Context) RegisterSingletonType(name string, factory SingletonFactory) {
 func (c *Context) RegisterPreSingletonType(name string, factory SingletonFactory) {
 	for _, s := range c.preSingletonInfo {
 		if s.name == name {
-			panic(errors.New("presingleton name is already registered"))
+			panic(fmt.Errorf("presingleton %q is already registered", name))
 		}
 	}
 
@@ -608,7 +608,7 @@ func singletonTypeName(singleton Singleton) string {
 func (c *Context) RegisterTopDownMutator(name string, mutator TopDownMutator) MutatorHandle {
 	for _, m := range c.mutatorInfo {
 		if m.name == name && m.topDownMutator != nil {
-			panic(fmt.Errorf("mutator name %s is already registered", name))
+			panic(fmt.Errorf("mutator %q is already registered", name))
 		}
 	}
 
@@ -635,7 +635,7 @@ func (c *Context) RegisterTopDownMutator(name string, mutator TopDownMutator) Mu
 func (c *Context) RegisterBottomUpMutator(name string, mutator BottomUpMutator) MutatorHandle {
 	for _, m := range c.variantMutatorNames {
 		if m == name {
-			panic(fmt.Errorf("mutator name %s is already registered", name))
+			panic(fmt.Errorf("mutator %q is already registered", name))
 		}
 	}
 
