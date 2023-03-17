@@ -17,6 +17,8 @@ package blueprint
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -4333,7 +4335,7 @@ func (c *Context) writeAllModuleActions(nw *ninjaWriter) error {
 	}
 	sort.Sort(moduleSorter{modules, c.nameInterface})
 
-	phonys := c.extractPhonys(modules)
+	phonys := c.deduplicateOrderOnlyDeps(modules)
 	if err := c.writeLocalBuildActions(nw, phonys); err != nil {
 		return err
 	}
@@ -4463,36 +4465,23 @@ func (c *Context) SetBeforePrepareBuildActionsHook(hookFn func() error) {
 // phonyCandidate represents the state of a set of deps that decides its eligibility
 // to be extracted as a phony output
 type phonyCandidate struct {
-	sync.Mutex
-	frequency int       // the number of buildDef instances that use this set
-	phony     *buildDef // the phony buildDef that wraps the set
-	first     *buildDef // the first buildDef that uses this set
-	key       string    // a unique identifier for the set
-}
-
-func (c *phonyCandidate) less(other *phonyCandidate) bool {
-	if c.frequency == other.frequency {
-		if len(c.phony.OrderOnly) == len(other.phony.OrderOnly) {
-			return c.key < other.key
-		}
-		return len(c.phony.OrderOnly) < len(other.phony.OrderOnly)
-	}
-	return c.frequency < other.frequency
+	sync.Once
+	phony *buildDef // the phony buildDef that wraps the set
+	first *buildDef // the first buildDef that uses this set
 }
 
 // keyForPhonyCandidate gives a unique identifier for a set of deps.
-// We are not using hash because string concatenation proved cheaper.
 // If any of the deps use a variable, we return an empty string to signal
 // that this set of deps is ineligible for extraction.
 func keyForPhonyCandidate(deps []ninjaString) string {
-	s := make([]string, len(deps))
-	for i, d := range deps {
+	hasher := sha256.New()
+	for _, d := range deps {
 		if len(d.Variables()) != 0 {
 			return ""
 		}
-		s[i] = d.Value(nil)
+		io.WriteString(hasher, d.Value(nil))
 	}
-	return strings.Join(s, "\n")
+	return base64.RawURLEncoding.EncodeToString(hasher.Sum(nil))
 }
 
 // scanBuildDef is called for every known buildDef `b` that has a non-empty `b.OrderOnly`.
@@ -4506,45 +4495,35 @@ func scanBuildDef(wg *sync.WaitGroup, candidates *sync.Map, phonyCount *atomic.U
 		return
 	}
 	if v, loaded := candidates.LoadOrStore(key, &phonyCandidate{
-		frequency: 1,
-		first:     b,
-		key:       key,
+		first: b,
 	}); loaded {
 		m := v.(*phonyCandidate)
-		func() {
-			m.Lock()
-			defer m.Unlock()
-			if m.frequency == 1 {
-				// this is the second occurrence and hence it makes sense to
-				// extract it as a phony output
-				phonyCount.Add(1)
-				m.phony = &buildDef{
-					Rule: Phony,
-					// We are using placeholder because we don't have a deterministic
-					// name for the phony output; m.key is unique and could be used but
-					// it's rather long (and has characters we would need to escape)
-					Outputs:  make([]ninjaString, 1),
-					Inputs:   m.first.OrderOnly, //we could also use b.OrderOnly
-					Optional: true,
-				}
-				// the previously recorded build-def, which first had these deps as its
-				// order-only deps, should now use this phony output instead
-				m.first.OrderOnly = m.phony.Outputs
-				m.first = nil
+		m.Do(func() {
+			// this is the second occurrence and hence it makes sense to
+			// extract it as a phony output
+			phonyCount.Add(1)
+			m.phony = &buildDef{
+				Rule:     Phony,
+				Outputs:  []ninjaString{simpleNinjaString("dedup-" + key)},
+				Inputs:   m.first.OrderOnly, //we could also use b.OrderOnly
+				Optional: true,
 			}
-			m.frequency += 1
-			b.OrderOnly = m.phony.Outputs
-		}()
+			// the previously recorded build-def, which first had these deps as its
+			// order-only deps, should now use this phony output instead
+			m.first.OrderOnly = m.phony.Outputs
+			m.first = nil
+		})
+		b.OrderOnly = m.phony.Outputs
 	}
 }
 
-// extractPhonys searches for common sets of order-only dependencies across all
+// deduplicateOrderOnlyDeps searches for common sets of order-only dependencies across all
 // buildDef instances in the provided moduleInfo instances. Each such
 // common set forms a new buildDef representing a phony output that then becomes
 // the sole order-only dependency of those buildDef instances
-func (c *Context) extractPhonys(infos []*moduleInfo) *localBuildActions {
-	c.BeginEvent("extract_phonys")
-	defer c.EndEvent("extract_phonys")
+func (c *Context) deduplicateOrderOnlyDeps(infos []*moduleInfo) *localBuildActions {
+	c.BeginEvent("deduplicate_order_only_deps")
+	defer c.EndEvent("deduplicate_order_only_deps")
 
 	candidates := sync.Map{} //used as map[key]*candidate
 	phonyCount := atomic.Uint32{}
@@ -4559,30 +4538,24 @@ func (c *Context) extractPhonys(infos []*moduleInfo) *localBuildActions {
 	}
 	wg.Wait()
 
-	//now filter candidates with freq > 1
-	phonys := make([]*phonyCandidate, 0, phonyCount.Load())
+	// now collect all created phonys to return
+	phonys := make([]*buildDef, 0, phonyCount.Load())
 	candidates.Range(func(_ any, v any) bool {
 		candidate := v.(*phonyCandidate)
-		if candidate.frequency > 1 {
-			phonys = append(phonys, candidate)
+		if candidate.phony != nil {
+			phonys = append(phonys, candidate.phony)
 		}
 		return true
 	})
 
-	phonyBuildDefs := make([]*buildDef, len(phonys))
-	c.EventHandler.Do("name", func() {
-		// sorting for determinism
+	c.EventHandler.Do("sort_phony_builddefs", func() {
+		// sorting for determinism, the phony output names are stable
 		sort.Slice(phonys, func(i int, j int) bool {
-			return phonys[i].less(phonys[j])
+			return phonys[i].Outputs[0].Value(nil) < phonys[j].Outputs[0].Value(nil)
 		})
-		for index, p := range phonys {
-			// use the index to set the name for the phony output
-			p.phony.Outputs[0] = literalNinjaString(fmt.Sprintf("phony-%d", index))
-			phonyBuildDefs[index] = p.phony
-		}
 	})
 
-	return &localBuildActions{buildDefs: phonyBuildDefs}
+	return &localBuildActions{buildDefs: phonys}
 }
 
 func (c *Context) writeLocalBuildActions(nw *ninjaWriter,
