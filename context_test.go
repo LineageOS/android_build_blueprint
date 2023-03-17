@@ -1158,7 +1158,7 @@ func TestPackageIncludes(t *testing.T) {
 
 }
 
-func TestExtractPhonys(t *testing.T) {
+func TestDeduplicateOrderOnlyDeps(t *testing.T) {
 	outputs := func(names ...string) []ninjaString {
 		r := make([]ninjaString, len(names))
 		for i, name := range names {
@@ -1187,11 +1187,11 @@ func TestExtractPhonys(t *testing.T) {
 			m(b("B", nil, []string{"d"})),
 		},
 		expectedPhonys: []*buildDef{
-			b("phony-0", []string{"d"}, nil),
+			b("dedup-GKw-c0PwFokMUQ6T-TUmEWnZ4_VlQ2Qpgw-vCTT0-OQ", []string{"d"}, nil),
 		},
 		conversions: map[string][]ninjaString{
-			"A": outputs("phony-0"),
-			"B": outputs("phony-0"),
+			"A": outputs("dedup-GKw-c0PwFokMUQ6T-TUmEWnZ4_VlQ2Qpgw-vCTT0-OQ"),
+			"B": outputs("dedup-GKw-c0PwFokMUQ6T-TUmEWnZ4_VlQ2Qpgw-vCTT0-OQ"),
 		},
 	}, {
 		modules: []*moduleInfo{
@@ -1204,11 +1204,11 @@ func TestExtractPhonys(t *testing.T) {
 			m(b("B", nil, []string{"b"})),
 			m(b("C", nil, []string{"a"})),
 		},
-		expectedPhonys: []*buildDef{b("phony-0", []string{"a"}, nil)},
+		expectedPhonys: []*buildDef{b("dedup-ypeBEsobvcr6wjGzmiPcTaeG7_gUfE5yuYB3ha_uSLs", []string{"a"}, nil)},
 		conversions: map[string][]ninjaString{
-			"A": outputs("phony-0"),
+			"A": outputs("dedup-ypeBEsobvcr6wjGzmiPcTaeG7_gUfE5yuYB3ha_uSLs"),
 			"B": outputs("b"),
-			"C": outputs("phony-0"),
+			"C": outputs("dedup-ypeBEsobvcr6wjGzmiPcTaeG7_gUfE5yuYB3ha_uSLs"),
 		},
 	}, {
 		modules: []*moduleInfo{
@@ -1218,19 +1218,19 @@ func TestExtractPhonys(t *testing.T) {
 				b("D", nil, []string{"a", "c"})),
 		},
 		expectedPhonys: []*buildDef{
-			b("phony-0", []string{"a", "b"}, nil),
-			b("phony-1", []string{"a", "c"}, nil)},
+			b("dedup--44g_C5MPySMYMOb1lLzwTRymLuXe4tNWQO4UFViBgM", []string{"a", "b"}, nil),
+			b("dedup-9F3lHN7zCZFVHkHogt17VAR5lkigoAdT9E_JZuYVP8E", []string{"a", "c"}, nil)},
 		conversions: map[string][]ninjaString{
-			"A": outputs("phony-0"),
-			"B": outputs("phony-0"),
-			"C": outputs("phony-1"),
-			"D": outputs("phony-1"),
+			"A": outputs("dedup--44g_C5MPySMYMOb1lLzwTRymLuXe4tNWQO4UFViBgM"),
+			"B": outputs("dedup--44g_C5MPySMYMOb1lLzwTRymLuXe4tNWQO4UFViBgM"),
+			"C": outputs("dedup-9F3lHN7zCZFVHkHogt17VAR5lkigoAdT9E_JZuYVP8E"),
+			"D": outputs("dedup-9F3lHN7zCZFVHkHogt17VAR5lkigoAdT9E_JZuYVP8E"),
 		},
 	}}
 	for index, tc := range testCases {
 		t.Run(fmt.Sprintf("TestCase-%d", index), func(t *testing.T) {
 			ctx := NewContext()
-			actualPhonys := ctx.extractPhonys(tc.modules)
+			actualPhonys := ctx.deduplicateOrderOnlyDeps(tc.modules)
 			if len(actualPhonys.variables) != 0 {
 				t.Errorf("No variables expected but found %v", actualPhonys.variables)
 			}
