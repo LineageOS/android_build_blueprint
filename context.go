@@ -2705,6 +2705,30 @@ func getNinjaStringsWithNilPkgNames(nStrs []ninjaString) []string {
 	return strs
 }
 
+func (c *Context) GetOutputsFromModuleNames(moduleNames []string) map[string][]string {
+	modulesToOutputs := make(map[string][]string)
+	for _, m := range c.modulesSorted {
+		if inList(m.Name(), moduleNames) {
+			jmWithActions := jsonModuleWithActionsFromModuleInfo(m)
+			for _, a := range jmWithActions.Module["Actions"].([]JSONAction) {
+				modulesToOutputs[m.Name()] = append(modulesToOutputs[m.Name()], a.Outputs...)
+			}
+			// There could be several modules with the same name, so keep looping
+		}
+	}
+
+	return modulesToOutputs
+}
+
+func inList(s string, l []string) bool {
+	for _, element := range l {
+		if s == element {
+			return true
+		}
+	}
+	return false
+}
+
 // PrintJSONGraph prints info of modules in a JSON file.
 func (c *Context) PrintJSONGraphAndActions(wGraph io.Writer, wActions io.Writer) {
 	modulesToGraph := make([]*JsonModule, 0)
