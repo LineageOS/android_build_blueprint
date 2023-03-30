@@ -142,6 +142,45 @@ type Context struct {
 
 	// String values that can be used to gate build graph traversal
 	includeTags *IncludeTags
+
+	sourceRootDirs *SourceRootDirs
+}
+
+// A container for String keys. The keys can be used to gate build graph traversal
+type SourceRootDirs struct {
+	dirs []string
+}
+
+func (dirs *SourceRootDirs) Add(names ...string) {
+	dirs.dirs = append(dirs.dirs, names...)
+}
+
+func (dirs *SourceRootDirs) SourceRootDirAllowed(path string) (bool, string) {
+	sort.Slice(dirs.dirs, func(i, j int) bool {
+		return len(dirs.dirs[i]) < len(dirs.dirs[j])
+	})
+	last := len(dirs.dirs)
+	for i := range dirs.dirs {
+		// iterate from longest paths (most specific)
+		prefix := dirs.dirs[last-i-1]
+		disallowedPrefix := false
+		if len(prefix) >= 1 && prefix[0] == '-' {
+			prefix = prefix[1:]
+			disallowedPrefix = true
+		}
+		if strings.HasPrefix(path, prefix) {
+			if disallowedPrefix {
+				return false, prefix
+			} else {
+				return true, prefix
+			}
+		}
+	}
+	return true, ""
+}
+
+func (c *Context) AddSourceRootDirs(dirs ...string) {
+	c.sourceRootDirs.Add(dirs...)
 }
 
 // A container for String keys. The keys can be used to gate build graph traversal
@@ -427,6 +466,7 @@ func newContext() *Context {
 		fs:                 pathtools.OsFs,
 		finishedMutators:   make(map[*mutatorInfo]bool),
 		includeTags:        &IncludeTags{},
+		sourceRootDirs:     &SourceRootDirs{},
 		outDir:             nil,
 		requiredNinjaMajor: 1,
 		requiredNinjaMinor: 7,
@@ -968,15 +1008,25 @@ func (c *Context) ParseBlueprintsFiles(rootFile string,
 	return c.ParseFileList(baseDir, pathsToParse, config)
 }
 
+type shouldVisitFileInfo struct {
+	shouldVisitFile bool
+	skippedModules  []string
+	reasonForSkip   string
+	errs            []error
+}
+
 // Returns a boolean for whether this file should be analyzed
 // Evaluates to true if the file either
 // 1. does not contain a blueprint_package_includes
 // 2. contains a blueprint_package_includes and all requested tags are set
 // This should be processed before adding any modules to the build graph
-func shouldVisitFile(c *Context, file *parser.File) (bool, []error) {
+func shouldVisitFile(c *Context, file *parser.File) shouldVisitFileInfo {
+	skippedModules := []string{}
+	var blueprintPackageIncludes *PackageIncludes
 	for _, def := range file.Defs {
 		switch def := def.(type) {
 		case *parser.Module:
+			skippedModules = append(skippedModules, def.Name())
 			if def.Type != "blueprint_package_includes" {
 				continue
 			}
@@ -984,14 +1034,43 @@ func shouldVisitFile(c *Context, file *parser.File) (bool, []error) {
 			if len(errs) > 0 {
 				// This file contains errors in blueprint_package_includes
 				// Visit anyways so that we can report errors on other modules in the file
-				return true, errs
+				return shouldVisitFileInfo{
+					shouldVisitFile: true,
+					errs:            errs,
+				}
 			}
 			logicModule, _ := c.cloneLogicModule(module)
-			pi := logicModule.(*PackageIncludes)
-			return pi.MatchesIncludeTags(c), []error{}
+			blueprintPackageIncludes = logicModule.(*PackageIncludes)
 		}
 	}
-	return true, []error{}
+
+	if blueprintPackageIncludes != nil {
+		packageMatches := blueprintPackageIncludes.MatchesIncludeTags(c)
+		if !packageMatches {
+			return shouldVisitFileInfo{
+				shouldVisitFile: false,
+				skippedModules:  skippedModules,
+				reasonForSkip: fmt.Sprintf(
+					"module is defined in %q which contains a blueprint_package_includes module with unsatisfied tags",
+					file.Name,
+				),
+			}
+		}
+	}
+
+	shouldVisit, invalidatingPrefix := c.sourceRootDirs.SourceRootDirAllowed(file.Name)
+	if !shouldVisit {
+		return shouldVisitFileInfo{
+			shouldVisitFile: shouldVisit,
+			skippedModules:  skippedModules,
+			reasonForSkip: fmt.Sprintf(
+				"%q is a descendant of %q, and that path prefix was not included in PRODUCT_SOURCE_ROOT_DIRS",
+				file.Name,
+				invalidatingPrefix,
+			),
+		}
+	}
+	return shouldVisitFileInfo{shouldVisitFile: true}
 }
 
 func (c *Context) ParseFileList(rootDir string, filePaths []string,
@@ -1009,9 +1088,15 @@ func (c *Context) ParseFileList(rootDir string, filePaths []string,
 		added chan<- struct{}
 	}
 
+	type newSkipInfo struct {
+		shouldVisitFileInfo
+		file string
+	}
+
 	moduleCh := make(chan newModuleInfo)
 	errsCh := make(chan []error)
 	doneCh := make(chan struct{})
+	skipCh := make(chan newSkipInfo)
 	var numErrs uint32
 	var numGoroutines int32
 
@@ -1046,12 +1131,17 @@ func (c *Context) ParseFileList(rootDir string, filePaths []string,
 			}
 			return nil
 		}
-		shouldVisit, errs := shouldVisitFile(c, file)
+		shouldVisitInfo := shouldVisitFile(c, file)
+		errs := shouldVisitInfo.errs
 		if len(errs) > 0 {
 			atomic.AddUint32(&numErrs, uint32(len(errs)))
 			errsCh <- errs
 		}
-		if !shouldVisit {
+		if !shouldVisitInfo.shouldVisitFile {
+			skipCh <- newSkipInfo{
+				file:                file.Name,
+				shouldVisitFileInfo: shouldVisitInfo,
+			}
 			// TODO: Write a file that lists the skipped bp files
 			return
 		}
@@ -1107,6 +1197,14 @@ loop:
 			n := atomic.AddInt32(&numGoroutines, -1)
 			if n == 0 {
 				break loop
+			}
+		case skipped := <-skipCh:
+			nctx := newNamespaceContextFromFilename(skipped.file)
+			for _, name := range skipped.skippedModules {
+				c.nameInterface.NewSkippedModule(nctx, name, SkippedModuleInfo{
+					filename: skipped.file,
+					reason:   skipped.reasonForSkip,
+				})
 			}
 		}
 	}
@@ -3515,7 +3613,6 @@ func (c *Context) discoveredMissingDependencies(module *moduleInfo, depName stri
 
 func (c *Context) missingDependencyError(module *moduleInfo, depName string) (errs error) {
 	err := c.nameInterface.MissingDependencyError(module.Name(), module.namespace(), depName)
-
 	return &BlueprintError{
 		Err: err,
 		Pos: module.pos,
