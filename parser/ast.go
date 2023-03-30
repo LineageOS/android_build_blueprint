@@ -60,6 +60,8 @@ type Module struct {
 	Type    string
 	TypePos scanner.Position
 	Map
+	//TODO(delmerico) make this a private field once ag/21588220 lands
+	Name__internal_only *string
 }
 
 func (m *Module) Copy() *Module {
@@ -85,6 +87,28 @@ func (m *Module) definitionTag() {}
 
 func (m *Module) Pos() scanner.Position { return m.TypePos }
 func (m *Module) End() scanner.Position { return m.Map.End() }
+
+func (m *Module) Name() string {
+	if m.Name__internal_only != nil {
+		return *m.Name__internal_only
+	}
+	for _, prop := range m.Properties {
+		if prop.Name == "name" {
+			if stringProp, ok := prop.Value.(*String); ok {
+				name := stringProp.Value
+				m.Name__internal_only = &name
+			} else {
+				name := prop.Value.String()
+				m.Name__internal_only = &name
+			}
+		}
+	}
+	if m.Name__internal_only == nil {
+		name := ""
+		m.Name__internal_only = &name
+	}
+	return *m.Name__internal_only
+}
 
 // A Property is a name: value pair within a Map, which may be a top level Module.
 type Property struct {
