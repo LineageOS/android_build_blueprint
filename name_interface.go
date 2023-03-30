@@ -16,7 +16,9 @@ package blueprint
 
 import (
 	"fmt"
+	"os"
 	"sort"
+	"strings"
 )
 
 // This file exposes the logic of locating a module via a query string, to enable
@@ -54,6 +56,9 @@ type NameInterface interface {
 	// Gets called when a new module is created
 	NewModule(ctx NamespaceContext, group ModuleGroup, module Module) (namespace Namespace, err []error)
 
+	// Gets called when a module was pruned from the build tree by SourceRootDirs
+	NewSkippedModule(ctx NamespaceContext, name string, skipInfo SkippedModuleInfo)
+
 	// Finds the module with the given name
 	ModuleFromName(moduleName string, namespace Namespace) (group ModuleGroup, found bool)
 
@@ -88,18 +93,29 @@ func newNamespaceContext(moduleInfo *moduleInfo) (ctx NamespaceContext) {
 	return &namespaceContextImpl{moduleInfo.pos.Filename}
 }
 
+func newNamespaceContextFromFilename(filename string) NamespaceContext {
+	return &namespaceContextImpl{filename}
+}
+
 func (ctx *namespaceContextImpl) ModulePath() string {
 	return ctx.modulePath
 }
 
+type SkippedModuleInfo struct {
+	filename string
+	reason   string
+}
+
 // a SimpleNameInterface just stores all modules in a map based on name
 type SimpleNameInterface struct {
-	modules map[string]ModuleGroup
+	modules        map[string]ModuleGroup
+	skippedModules map[string][]SkippedModuleInfo
 }
 
 func NewSimpleNameInterface() *SimpleNameInterface {
 	return &SimpleNameInterface{
-		modules: make(map[string]ModuleGroup),
+		modules:        make(map[string]ModuleGroup),
+		skippedModules: make(map[string][]SkippedModuleInfo),
 	}
 }
 
@@ -118,8 +134,31 @@ func (s *SimpleNameInterface) NewModule(ctx NamespaceContext, group ModuleGroup,
 	return nil, []error{}
 }
 
+func (s *SimpleNameInterface) NewSkippedModule(ctx NamespaceContext, name string, info SkippedModuleInfo) {
+	if name == "" {
+		return
+	}
+	s.skippedModules[name] = append(s.skippedModules[name], info)
+}
+
 func (s *SimpleNameInterface) ModuleFromName(moduleName string, namespace Namespace) (group ModuleGroup, found bool) {
 	group, found = s.modules[moduleName]
+	skipInfos, skipped := s.skippedModules[moduleName]
+	if skipped {
+		filesFound := make([]string, 0, len(skipInfos))
+		reasons := make([]string, 0, len(skipInfos))
+		for _, info := range skipInfos {
+			filesFound = append(filesFound, info.filename)
+			reasons = append(reasons, info.reason)
+		}
+		fmt.Fprintf(
+			os.Stderr,
+			"module %q was defined in files(s) [%v], but was skipped for reason(s) [%v]\n",
+			moduleName,
+			strings.Join(filesFound, ", "),
+			strings.Join(reasons, "; "),
+		)
+	}
 	return group, found
 }
 

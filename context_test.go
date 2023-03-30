@@ -1272,3 +1272,293 @@ func TestDeduplicateOrderOnlyDeps(t *testing.T) {
 		})
 	}
 }
+
+func TestSourceRootDirAllowed(t *testing.T) {
+	type pathCase struct {
+		path           string
+		decidingPrefix string
+		allowed        bool
+	}
+	testcases := []struct {
+		desc      string
+		rootDirs  []string
+		pathCases []pathCase
+	}{
+		{
+			desc: "simple case",
+			rootDirs: []string{
+				"a",
+				"b/c/d",
+				"-c",
+				"-d/c/a",
+				"c/some_single_file",
+			},
+			pathCases: []pathCase{
+				{
+					path:           "a",
+					decidingPrefix: "a",
+					allowed:        true,
+				},
+				{
+					path:           "a/b/c",
+					decidingPrefix: "a",
+					allowed:        true,
+				},
+				{
+					path:           "b",
+					decidingPrefix: "",
+					allowed:        true,
+				},
+				{
+					path:           "b/c/d/a",
+					decidingPrefix: "b/c/d",
+					allowed:        true,
+				},
+				{
+					path:           "c",
+					decidingPrefix: "c",
+					allowed:        false,
+				},
+				{
+					path:           "c/a/b",
+					decidingPrefix: "c",
+					allowed:        false,
+				},
+				{
+					path:           "c/some_single_file",
+					decidingPrefix: "c/some_single_file",
+					allowed:        true,
+				},
+				{
+					path:           "d/c/a/abc",
+					decidingPrefix: "d/c/a",
+					allowed:        false,
+				},
+			},
+		},
+		{
+			desc: "root directory order matters",
+			rootDirs: []string{
+				"-a",
+				"a/c/some_allowed_file",
+				"a/b/d/some_allowed_file",
+				"a/b",
+				"a/c",
+				"-a/b/d",
+			},
+			pathCases: []pathCase{
+				{
+					path:           "a",
+					decidingPrefix: "a",
+					allowed:        false,
+				},
+				{
+					path:           "a/some_disallowed_file",
+					decidingPrefix: "a",
+					allowed:        false,
+				},
+				{
+					path:           "a/c/some_allowed_file",
+					decidingPrefix: "a/c/some_allowed_file",
+					allowed:        true,
+				},
+				{
+					path:           "a/b/d/some_allowed_file",
+					decidingPrefix: "a/b/d/some_allowed_file",
+					allowed:        true,
+				},
+				{
+					path:           "a/b/c",
+					decidingPrefix: "a/b",
+					allowed:        true,
+				},
+				{
+					path:           "a/b/c/some_allowed_file",
+					decidingPrefix: "a/b",
+					allowed:        true,
+				},
+				{
+					path:           "a/b/d",
+					decidingPrefix: "a/b/d",
+					allowed:        false,
+				},
+			},
+		},
+	}
+	for _, tc := range testcases {
+		dirs := SourceRootDirs{}
+		dirs.Add(tc.rootDirs...)
+		for _, pc := range tc.pathCases {
+			t.Run(fmt.Sprintf("%s: %s", tc.desc, pc.path), func(t *testing.T) {
+				allowed, decidingPrefix := dirs.SourceRootDirAllowed(pc.path)
+				if allowed != pc.allowed {
+					if pc.allowed {
+						t.Errorf("expected path %q to be allowed, but was not; root allowlist: %q", pc.path, tc.rootDirs)
+					} else {
+						t.Errorf("path %q was allowed unexpectedly; root allowlist: %q", pc.path, tc.rootDirs)
+					}
+				}
+				if decidingPrefix != pc.decidingPrefix {
+					t.Errorf("expected decidingPrefix to be %q, but got %q", pc.decidingPrefix, decidingPrefix)
+				}
+			})
+		}
+	}
+}
+
+func TestSourceRootDirs(t *testing.T) {
+	root_foo_bp := `
+	foo_module {
+		name: "foo",
+		deps: ["foo_dir1", "foo_dir_ignored_special_case"],
+	}
+	`
+	dir1_foo_bp := `
+	foo_module {
+		name: "foo_dir1",
+		deps: ["foo_dir_ignored"],
+	}
+	`
+	dir_ignored_foo_bp := `
+	foo_module {
+		name: "foo_dir_ignored",
+	}
+	`
+	dir_ignored_special_case_foo_bp := `
+	foo_module {
+		name: "foo_dir_ignored_special_case",
+	}
+	`
+	mockFs := map[string][]byte{
+		"Android.bp":                          []byte(root_foo_bp),
+		"dir1/Android.bp":                     []byte(dir1_foo_bp),
+		"dir_ignored/Android.bp":              []byte(dir_ignored_foo_bp),
+		"dir_ignored/special_case/Android.bp": []byte(dir_ignored_special_case_foo_bp),
+	}
+	fileList := []string{}
+	for f := range mockFs {
+		fileList = append(fileList, f)
+	}
+	testCases := []struct {
+		sourceRootDirs       []string
+		expectedModuleDefs   []string
+		unexpectedModuleDefs []string
+		expectedErrs         []string
+	}{
+		{
+			sourceRootDirs: []string{},
+			expectedModuleDefs: []string{
+				"foo",
+				"foo_dir1",
+				"foo_dir_ignored",
+				"foo_dir_ignored_special_case",
+			},
+		},
+		{
+			sourceRootDirs: []string{"-", ""},
+			unexpectedModuleDefs: []string{
+				"foo",
+				"foo_dir1",
+				"foo_dir_ignored",
+				"foo_dir_ignored_special_case",
+			},
+		},
+		{
+			sourceRootDirs: []string{"-"},
+			unexpectedModuleDefs: []string{
+				"foo",
+				"foo_dir1",
+				"foo_dir_ignored",
+				"foo_dir_ignored_special_case",
+			},
+		},
+		{
+			sourceRootDirs: []string{"dir1"},
+			expectedModuleDefs: []string{
+				"foo",
+				"foo_dir1",
+				"foo_dir_ignored",
+				"foo_dir_ignored_special_case",
+			},
+		},
+		{
+			sourceRootDirs: []string{"-dir1"},
+			expectedModuleDefs: []string{
+				"foo",
+				"foo_dir_ignored",
+				"foo_dir_ignored_special_case",
+			},
+			unexpectedModuleDefs: []string{
+				"foo_dir1",
+			},
+			expectedErrs: []string{
+				"Android.bp:2:2: \"foo\" depends on undefined module \"foo_dir1\"",
+			},
+		},
+		{
+			sourceRootDirs: []string{"-", "dir1"},
+			expectedModuleDefs: []string{
+				"foo_dir1",
+			},
+			unexpectedModuleDefs: []string{
+				"foo",
+				"foo_dir_ignored",
+				"foo_dir_ignored_special_case",
+			},
+			expectedErrs: []string{
+				"dir1/Android.bp:2:2: \"foo_dir1\" depends on undefined module \"foo_dir_ignored\"",
+			},
+		},
+		{
+			sourceRootDirs: []string{"-", "dir1", "dir_ignored/special_case/Android.bp"},
+			expectedModuleDefs: []string{
+				"foo_dir1",
+				"foo_dir_ignored_special_case",
+			},
+			unexpectedModuleDefs: []string{
+				"foo",
+				"foo_dir_ignored",
+			},
+			expectedErrs: []string{
+				"dir1/Android.bp:2:2: \"foo_dir1\" depends on undefined module \"foo_dir_ignored\"",
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf(`source root dirs are %q`, tc.sourceRootDirs), func(t *testing.T) {
+			ctx := NewContext()
+			ctx.MockFileSystem(mockFs)
+			ctx.RegisterModuleType("foo_module", newFooModule)
+			ctx.RegisterBottomUpMutator("deps", depsMutator)
+			ctx.AddSourceRootDirs(tc.sourceRootDirs...)
+			RegisterPackageIncludesModuleType(ctx)
+			ctx.ParseFileList(".", fileList, nil)
+			_, actualErrs := ctx.ResolveDependencies(nil)
+
+			stringErrs := []string(nil)
+			for i := range actualErrs {
+				stringErrs = append(stringErrs, fmt.Sprint(actualErrs[i]))
+			}
+			if !reflect.DeepEqual(tc.expectedErrs, stringErrs) {
+				t.Errorf("expected to find errors %v; got %v", tc.expectedErrs, stringErrs)
+			}
+			for _, modName := range tc.expectedModuleDefs {
+				allMods := ctx.moduleGroupFromName(modName, nil)
+				if allMods == nil || len(allMods.modules) != 1 {
+					mods := modulesOrAliases{}
+					if allMods != nil {
+						mods = allMods.modules
+					}
+					t.Errorf("expected to find one definition for module %q, but got %v", modName, mods)
+				}
+			}
+
+			for _, modName := range tc.unexpectedModuleDefs {
+				allMods := ctx.moduleGroupFromName(modName, nil)
+				if allMods != nil {
+					t.Errorf("expected to find no definitions for module %q, but got %v", modName, allMods.modules)
+				}
+			}
+		})
+	}
+}
