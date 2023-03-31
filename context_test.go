@@ -1492,7 +1492,7 @@ func TestSourceRootDirs(t *testing.T) {
 				"foo_dir1",
 			},
 			expectedErrs: []string{
-				"Android.bp:2:2: \"foo\" depends on undefined module \"foo_dir1\"",
+				`Android.bp:2:2: module "foo" depends on skipped module "foo_dir1"; "foo_dir1" was defined in files(s) [dir1/Android.bp], but was skipped for reason(s) ["dir1/Android.bp" is a descendant of "dir1", and that path prefix was not included in PRODUCT_SOURCE_ROOT_DIRS]`,
 			},
 		},
 		{
@@ -1506,7 +1506,7 @@ func TestSourceRootDirs(t *testing.T) {
 				"foo_dir_ignored_special_case",
 			},
 			expectedErrs: []string{
-				"dir1/Android.bp:2:2: \"foo_dir1\" depends on undefined module \"foo_dir_ignored\"",
+				`dir1/Android.bp:2:2: module "foo_dir1" depends on skipped module "foo_dir_ignored"; "foo_dir_ignored" was defined in files(s) [dir_ignored/Android.bp], but was skipped for reason(s) ["dir_ignored/Android.bp" is a descendant of "", and that path prefix was not included in PRODUCT_SOURCE_ROOT_DIRS]`,
 			},
 		},
 		{
@@ -1520,7 +1520,7 @@ func TestSourceRootDirs(t *testing.T) {
 				"foo_dir_ignored",
 			},
 			expectedErrs: []string{
-				"dir1/Android.bp:2:2: \"foo_dir1\" depends on undefined module \"foo_dir_ignored\"",
+				"dir1/Android.bp:2:2: module \"foo_dir1\" depends on skipped module \"foo_dir_ignored\"; \"foo_dir_ignored\" was defined in files(s) [dir_ignored/Android.bp], but was skipped for reason(s) [\"dir_ignored/Android.bp\" is a descendant of \"\", and that path prefix was not included in PRODUCT_SOURCE_ROOT_DIRS]",
 			},
 		},
 	}
@@ -1536,8 +1536,8 @@ func TestSourceRootDirs(t *testing.T) {
 			_, actualErrs := ctx.ResolveDependencies(nil)
 
 			stringErrs := []string(nil)
-			for i := range actualErrs {
-				stringErrs = append(stringErrs, fmt.Sprint(actualErrs[i]))
+			for _, err := range actualErrs {
+				stringErrs = append(stringErrs, err.Error())
 			}
 			if !reflect.DeepEqual(tc.expectedErrs, stringErrs) {
 				t.Errorf("expected to find errors %v; got %v", tc.expectedErrs, stringErrs)
