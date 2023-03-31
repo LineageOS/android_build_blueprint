@@ -3612,7 +3612,8 @@ func (c *Context) discoveredMissingDependencies(module *moduleInfo, depName stri
 }
 
 func (c *Context) missingDependencyError(module *moduleInfo, depName string) (errs error) {
-	err := c.nameInterface.MissingDependencyError(module.Name(), module.namespace(), depName)
+	guess := namesLike(depName, module.Name(), c.moduleGroups)
+	err := c.nameInterface.MissingDependencyError(module.Name(), module.namespace(), depName, guess)
 	return &BlueprintError{
 		Err: err,
 		Pos: module.pos,
