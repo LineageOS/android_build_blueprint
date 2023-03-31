@@ -16,7 +16,6 @@ package blueprint
 
 import (
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 )
@@ -61,6 +60,9 @@ type NameInterface interface {
 
 	// Finds the module with the given name
 	ModuleFromName(moduleName string, namespace Namespace) (group ModuleGroup, found bool)
+
+	// Finds if the module with the given name was skipped
+	SkippedModuleFromName(moduleName string, namespace Namespace) (skipInfos []SkippedModuleInfo, skipped bool)
 
 	// Returns an error indicating that the given module could not be found.
 	// The error contains some diagnostic information about where the dependency can be found.
@@ -143,23 +145,12 @@ func (s *SimpleNameInterface) NewSkippedModule(ctx NamespaceContext, name string
 
 func (s *SimpleNameInterface) ModuleFromName(moduleName string, namespace Namespace) (group ModuleGroup, found bool) {
 	group, found = s.modules[moduleName]
-	skipInfos, skipped := s.skippedModules[moduleName]
-	if skipped {
-		filesFound := make([]string, 0, len(skipInfos))
-		reasons := make([]string, 0, len(skipInfos))
-		for _, info := range skipInfos {
-			filesFound = append(filesFound, info.filename)
-			reasons = append(reasons, info.reason)
-		}
-		fmt.Fprintf(
-			os.Stderr,
-			"module %q was defined in files(s) [%v], but was skipped for reason(s) [%v]\n",
-			moduleName,
-			strings.Join(filesFound, ", "),
-			strings.Join(reasons, "; "),
-		)
-	}
 	return group, found
+}
+
+func (s *SimpleNameInterface) SkippedModuleFromName(moduleName string, namespace Namespace) (skipInfos []SkippedModuleInfo, skipped bool) {
+	skipInfos, skipped = s.skippedModules[moduleName]
+	return
 }
 
 func (s *SimpleNameInterface) Rename(oldName string, newName string, namespace Namespace) (errs []error) {
@@ -207,6 +198,23 @@ func (s *SimpleNameInterface) AllModules() []ModuleGroup {
 }
 
 func (s *SimpleNameInterface) MissingDependencyError(depender string, dependerNamespace Namespace, dependency string) (err error) {
+	skipInfos, skipped := s.SkippedModuleFromName(dependency, dependerNamespace)
+	if skipped {
+		filesFound := make([]string, 0, len(skipInfos))
+		reasons := make([]string, 0, len(skipInfos))
+		for _, info := range skipInfos {
+			filesFound = append(filesFound, info.filename)
+			reasons = append(reasons, info.reason)
+		}
+		return fmt.Errorf(
+			"module %q depends on skipped module %q; %q was defined in files(s) [%v], but was skipped for reason(s) [%v]",
+			depender,
+			dependency,
+			dependency,
+			strings.Join(filesFound, ", "),
+			strings.Join(reasons, "; "),
+		)
+	}
 	return fmt.Errorf("%q depends on undefined module %q", depender, dependency)
 }
 
