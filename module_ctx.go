@@ -300,6 +300,9 @@ type BaseModuleContext interface {
 	// There are no guarantees about which variant of the module will be returned.
 	// Prefer retrieving the module using GetDirectDep or a visit function, when possible, as
 	// this will guarantee the appropriate module-variant dependency is returned.
+	//
+	// WARNING: This should _only_ be used within the context of bp2build, where variants and
+	// dependencies are not created.
 	ModuleFromName(name string) (Module, bool)
 
 	// OtherModuleDependencyVariantExists returns true if a module with the
