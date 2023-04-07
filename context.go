@@ -2679,6 +2679,7 @@ type jsonVariations []Variation
 
 type jsonModuleName struct {
 	Name                 string
+	Variant              string
 	Variations           jsonVariations
 	DependencyVariations jsonVariations
 }
@@ -2714,6 +2715,7 @@ func toJsonVariationMap(vm variationMap) jsonVariations {
 func jsonModuleNameFromModuleInfo(m *moduleInfo) *jsonModuleName {
 	return &jsonModuleName{
 		Name:                 m.Name(),
+		Variant:              m.variant.name,
 		Variations:           toJsonVariationMap(m.variant.variations),
 		DependencyVariations: toJsonVariationMap(m.variant.dependencyVariations),
 	}
@@ -2761,7 +2763,8 @@ func jsonModuleFromModuleInfo(m *moduleInfo) *JsonModule {
 func jsonModuleWithActionsFromModuleInfo(m *moduleInfo) *JsonModule {
 	result := &JsonModule{
 		jsonModuleName: jsonModuleName{
-			Name: m.Name(),
+			Name:    m.Name(),
+			Variant: m.variant.name,
 		},
 		Deps:      make([]jsonDep, 0),
 		Type:      m.typeName,
