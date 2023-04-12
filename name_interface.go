@@ -66,7 +66,7 @@ type NameInterface interface {
 
 	// Returns an error indicating that the given module could not be found.
 	// The error contains some diagnostic information about where the dependency can be found.
-	MissingDependencyError(depender string, dependerNamespace Namespace, depName string) (err error)
+	MissingDependencyError(depender string, dependerNamespace Namespace, depName string, guess []string) (err error)
 
 	// Rename
 	Rename(oldName string, newName string, namespace Namespace) []error
@@ -197,7 +197,7 @@ func (s *SimpleNameInterface) AllModules() []ModuleGroup {
 	return groups
 }
 
-func (s *SimpleNameInterface) MissingDependencyError(depender string, dependerNamespace Namespace, dependency string) (err error) {
+func (s *SimpleNameInterface) MissingDependencyError(depender string, dependerNamespace Namespace, dependency string, guess []string) (err error) {
 	skipInfos, skipped := s.SkippedModuleFromName(dependency, dependerNamespace)
 	if skipped {
 		filesFound := make([]string, 0, len(skipInfos))
@@ -215,7 +215,12 @@ func (s *SimpleNameInterface) MissingDependencyError(depender string, dependerNa
 			strings.Join(reasons, "; "),
 		)
 	}
-	return fmt.Errorf("%q depends on undefined module %q", depender, dependency)
+
+	guessString := ""
+	if len(guess) > 0 {
+		guessString = fmt.Sprintf(" Did you mean %q?", guess)
+	}
+	return fmt.Errorf("%q depends on undefined module %q.%s", depender, dependency, guessString)
 }
 
 func (s *SimpleNameInterface) GetNamespace(ctx NamespaceContext) Namespace {
