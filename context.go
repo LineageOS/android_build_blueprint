@@ -2806,19 +2806,24 @@ func getNinjaStringsWithNilPkgNames(nStrs []ninjaString) []string {
 	return strs
 }
 
-func (c *Context) GetOutputsFromModuleNames(moduleNames []string) map[string][]string {
-	modulesToOutputs := make(map[string][]string)
+func (c *Context) GetWeightedOutputsFromPredicate(predicate func(*JsonModule) (bool, int)) map[string]int {
+	outputToWeight := make(map[string]int)
 	for _, m := range c.modulesSorted {
-		if inList(m.Name(), moduleNames) {
-			jmWithActions := jsonModuleWithActionsFromModuleInfo(m)
+		jmWithActions := jsonModuleWithActionsFromModuleInfo(m)
+		if ok, weight := predicate(jmWithActions); ok {
 			for _, a := range jmWithActions.Module["Actions"].([]JSONAction) {
-				modulesToOutputs[m.Name()] = append(modulesToOutputs[m.Name()], a.Outputs...)
+				for _, o := range a.Outputs {
+					if val, ok := outputToWeight[o]; ok {
+						if val > weight {
+							continue
+						}
+					}
+					outputToWeight[o] = weight
+				}
 			}
-			// There could be several modules with the same name, so keep looping
 		}
 	}
-
-	return modulesToOutputs
+	return outputToWeight
 }
 
 func inList(s string, l []string) bool {
