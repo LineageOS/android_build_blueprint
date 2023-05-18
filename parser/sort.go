@@ -227,7 +227,8 @@ func sortSubList(values []Expression, nextPos scanner.Position, file *File) {
 		values[i].(*String).LiteralPos = curPos
 		for j, c := range copyComments {
 			if c.Pos().Offset > e.pos.Offset && c.Pos().Offset < e.nextPos.Offset {
-				file.Comments[j].Comments[0].Slash.Line = curPos.Line
+				file.Comments[j].Comments[0].Slash.Line = curPos.Line + c.Pos().Line - e.pos.Line
+				curPos.Line += c.Pos().Line - e.pos.Line
 				file.Comments[j].Comments[0].Slash.Offset += values[i].Pos().Offset - e.pos.Offset
 			}
 		}
