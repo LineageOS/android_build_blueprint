@@ -449,6 +449,116 @@ stuff {
 }
 `,
 	},
+	{
+		input: `
+// test
+foo {
+    stuff: [
+        "a", // great comment
+        "b",
+    ],
+}
+`,
+		output: `
+// test
+foo {
+    stuff: [
+        "a", // great comment
+        "b",
+    ],
+}
+`,
+	},
+	{
+		input: `
+// test
+foo {
+    stuff: [
+        "a",
+        // b comment
+        "b",
+    ],
+}
+`,
+		output: `
+// test
+foo {
+    stuff: [
+        "a",
+        // b comment
+        "b",
+    ],
+}
+`,
+	},
+	{
+		input: `
+// test
+foo {
+    stuff: [
+        "a", // a comment
+        // b comment
+        "b",
+    ],
+}
+`,
+		output: `
+// test
+foo {
+    stuff: [
+        "a", // a comment
+        // b comment
+        "b",
+    ],
+}
+`,
+	},
+	{
+		input: `
+// test
+foo {
+    stuff: [
+        "a",
+        // b comment
+        // on multiline
+        "b",
+    ],
+}
+`,
+		output: `
+// test
+foo {
+    stuff: [
+        "a",
+        // b comment
+        // on multiline
+        "b",
+    ],
+}
+`,
+	},
+	{ // Line comment are treat as groups separator
+		input: `
+// test
+foo {
+    stuff: [
+        "b",
+        // a comment
+        "a",
+    ],
+}
+`,
+		output: `
+// test
+foo {
+    stuff: [
+        "b",
+        // a comment
+        "a",
+    ],
+}
+`,
+	},
 }
 
 func TestPrinter(t *testing.T) {
