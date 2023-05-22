@@ -441,6 +441,7 @@ type singletonInfo struct {
 	factory   SingletonFactory
 	singleton Singleton
 	name      string
+	parallel  bool
 
 	// set during PrepareBuildActions
 	actionDefs localBuildActions
@@ -566,13 +567,15 @@ type SingletonFactory func() Singleton
 
 // RegisterSingletonType registers a singleton type that will be invoked to
 // generate build actions.  Each registered singleton type is instantiated
-// and invoked exactly once as part of the generate phase.  Each registered
-// singleton is invoked in registration order.
+// and invoked exactly once as part of the generate phase.
+//
+// Those singletons registered with parallel=true are run in parallel, after
+// which the other registered singletons are run in registration order.
 //
 // The singleton type names given here must be unique for the context.  The
 // factory function should be a named function so that its package and name can
 // be included in the generated Ninja file for debugging purposes.
-func (c *Context) RegisterSingletonType(name string, factory SingletonFactory) {
+func (c *Context) RegisterSingletonType(name string, factory SingletonFactory, parallel bool) {
 	for _, s := range c.singletonInfo {
 		if s.name == name {
 			panic(fmt.Errorf("singleton %q is already registered", name))
@@ -583,6 +586,7 @@ func (c *Context) RegisterSingletonType(name string, factory SingletonFactory) {
 		factory:   factory,
 		singleton: factory(),
 		name:      name,
+		parallel:  parallel,
 	})
 }
 
@@ -605,6 +609,7 @@ func (c *Context) RegisterPreSingletonType(name string, factory SingletonFactory
 		factory:   factory,
 		singleton: factory(),
 		name:      name,
+		parallel:  false,
 	})
 }
 
@@ -3314,6 +3319,8 @@ func spliceModules(modules modulesOrAliases, i int, newModules modulesOrAliases)
 func (c *Context) generateModuleBuildActions(config interface{},
 	liveGlobals *liveTracker) ([]string, []error) {
 
+	c.BeginEvent("generateModuleBuildActions")
+	defer c.EndEvent("generateModuleBuildActions")
 	var deps []string
 	var errs []error
 
@@ -3411,56 +3418,131 @@ func (c *Context) generateModuleBuildActions(config interface{},
 	return deps, errs
 }
 
-func (c *Context) generateSingletonBuildActions(config interface{},
-	singletons []*singletonInfo, liveGlobals *liveTracker) ([]string, []error) {
+func (c *Context) generateOneSingletonBuildActions(config interface{},
+	info *singletonInfo, liveGlobals *liveTracker) ([]string, []error) {
 
 	var deps []string
 	var errs []error
 
-	for _, info := range singletons {
-		// The parent scope of the singletonContext's local scope gets overridden to be that of the
-		// calling Go package on a per-call basis.  Since the initial parent scope doesn't matter we
-		// just set it to nil.
-		scope := newLocalScope(nil, singletonNamespacePrefix(info.name))
+	// The parent scope of the singletonContext's local scope gets overridden to be that of the
+	// calling Go package on a per-call basis.  Since the initial parent scope doesn't matter we
+	// just set it to nil.
+	scope := newLocalScope(nil, singletonNamespacePrefix(info.name))
 
-		sctx := &singletonContext{
-			name:    info.name,
-			context: c,
-			config:  config,
-			scope:   scope,
-			globals: liveGlobals,
-		}
+	sctx := &singletonContext{
+		name:    info.name,
+		context: c,
+		config:  config,
+		scope:   scope,
+		globals: liveGlobals,
+	}
 
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					in := fmt.Sprintf("GenerateBuildActions for singleton %s", info.name)
-					if err, ok := r.(panicError); ok {
-						err.addIn(in)
-						sctx.error(err)
-					} else {
-						sctx.error(newPanicErrorf(r, in))
-					}
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				in := fmt.Sprintf("GenerateBuildActions for singleton %s", info.name)
+				if err, ok := r.(panicError); ok {
+					err.addIn(in)
+					sctx.error(err)
+				} else {
+					sctx.error(newPanicErrorf(r, in))
 				}
-			}()
-			info.singleton.GenerateBuildActions(sctx)
+			}
 		}()
+		info.singleton.GenerateBuildActions(sctx)
+	}()
 
-		if len(sctx.errs) > 0 {
-			errs = append(errs, sctx.errs...)
+	if len(sctx.errs) > 0 {
+		errs = append(errs, sctx.errs...)
+		return deps, errs
+	}
+
+	deps = append(deps, sctx.ninjaFileDeps...)
+
+	newErrs := c.processLocalBuildActions(&info.actionDefs,
+		&sctx.actionDefs, liveGlobals)
+	errs = append(errs, newErrs...)
+	return deps, errs
+}
+
+func (c *Context) generateParallelSingletonBuildActions(config interface{},
+	singletons []*singletonInfo, liveGlobals *liveTracker) ([]string, []error) {
+
+	c.BeginEvent("generateParallelSingletonBuildActions")
+	defer c.EndEvent("generateParallelSingletonBuildActions")
+
+	var deps []string
+	var errs []error
+
+	wg := sync.WaitGroup{}
+	cancelCh := make(chan struct{})
+	depsCh := make(chan []string)
+	errsCh := make(chan []error)
+
+	go func() {
+		for {
+			select {
+			case <-cancelCh:
+				close(cancelCh)
+				return
+			case dep := <-depsCh:
+				deps = append(deps, dep...)
+			case newErrs := <-errsCh:
+				if len(errs) <= maxErrors {
+					errs = append(errs, newErrs...)
+				}
+			}
+		}
+	}()
+
+	for _, info := range singletons {
+		if !info.parallel {
+			// Skip any singletons registered with parallel=false.
+			continue
+		}
+		wg.Add(1)
+		go func(inf *singletonInfo) {
+			defer wg.Done()
+			newDeps, newErrs := c.generateOneSingletonBuildActions(config, inf, liveGlobals)
+			depsCh <- newDeps
+			errsCh <- newErrs
+		}(info)
+	}
+	wg.Wait()
+
+	cancelCh <- struct{}{}
+	<-cancelCh
+
+	return deps, errs
+}
+
+func (c *Context) generateSingletonBuildActions(config interface{},
+	singletons []*singletonInfo, liveGlobals *liveTracker) ([]string, []error) {
+
+	c.BeginEvent("generateSingletonBuildActions")
+	defer c.EndEvent("generateSingletonBuildActions")
+
+	var deps []string
+	var errs []error
+
+	// Run one singleton.  Use a variable to simplify manual validation testing.
+	var runSingleton = func(info *singletonInfo) {
+		c.BeginEvent("singleton:" + info.name)
+		defer c.EndEvent("singleton:" + info.name)
+		newDeps, newErrs := c.generateOneSingletonBuildActions(config, info, liveGlobals)
+		deps = append(deps, newDeps...)
+		errs = append(errs, newErrs...)
+	}
+
+	// First, take care of any singletons that want to run in parallel.
+	deps, errs = c.generateParallelSingletonBuildActions(config, singletons, liveGlobals)
+
+	for _, info := range singletons {
+		if !info.parallel {
+			runSingleton(info)
 			if len(errs) > maxErrors {
 				break
 			}
-			continue
-		}
-
-		deps = append(deps, sctx.ninjaFileDeps...)
-
-		newErrs := c.processLocalBuildActions(&info.actionDefs,
-			&sctx.actionDefs, liveGlobals)
-		errs = append(errs, newErrs...)
-		if len(errs) > maxErrors {
-			break
 		}
 	}
 

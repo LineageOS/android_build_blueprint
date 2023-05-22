@@ -227,7 +227,7 @@ func generateGlobNinjaFile(glob *GlobSingleton, config interface{}) ([]byte, []e
 	ctx := blueprint.NewContext()
 	ctx.RegisterSingletonType("glob", func() blueprint.Singleton {
 		return glob
-	})
+	}, false)
 
 	extraDeps, errs := ctx.ResolveDependencies(config)
 	if len(extraDeps) > 0 {
