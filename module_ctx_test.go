@@ -590,7 +590,7 @@ func TestAddNinjaFileDeps(t *testing.T) {
 	ctx.RegisterBottomUpMutator("testBottomUpMutator", addNinjaDepsTestBottomUpMutator)
 	ctx.RegisterTopDownMutator("testTopDownMutator", addNinjaDepsTestTopDownMutator)
 	ctx.RegisterPreSingletonType("testPreSingleton", addNinjaDepsTestPreSingletonFactory)
-	ctx.RegisterSingletonType("testSingleton", addNinjaDepsTestSingletonFactory)
+	ctx.RegisterSingletonType("testSingleton", addNinjaDepsTestSingletonFactory, false)
 	parseDeps, errs := ctx.ParseBlueprintsFiles("Android.bp", nil)
 	if len(errs) > 0 {
 		t.Errorf("unexpected parse errors:")
