@@ -91,7 +91,7 @@ func RunBlueprint(args Args, stopBefore StopBefore, ctx *blueprint.Context, conf
 	ctx.RegisterBottomUpMutator("bootstrap_plugin_deps", pluginDeps)
 	ctx.RegisterModuleType("bootstrap_go_package", newGoPackageModuleFactory())
 	ctx.RegisterModuleType("blueprint_go_binary", newGoBinaryModuleFactory())
-	ctx.RegisterSingletonType("bootstrap", newSingletonFactory())
+	ctx.RegisterSingletonType("bootstrap", newSingletonFactory(), false)
 	blueprint.RegisterPackageIncludesModuleType(ctx)
 
 	ctx.BeginEvent("parse_bp")
