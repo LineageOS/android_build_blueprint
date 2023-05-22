@@ -44,46 +44,46 @@ func (l *liveTracker) AddBuildDefDeps(def *buildDef) error {
 	l.Lock()
 	defer l.Unlock()
 
-	ruleDef, err := l.addRule(def.Rule)
+	ruleDef, err := l.innerAddRule(def.Rule)
 	if err != nil {
 		return err
 	}
 	def.RuleDef = ruleDef
 
-	err = l.addNinjaStringListDeps(def.Outputs)
+	err = l.innerAddNinjaStringListDeps(def.Outputs)
 	if err != nil {
 		return err
 	}
 
-	err = l.addNinjaStringListDeps(def.Inputs)
+	err = l.innerAddNinjaStringListDeps(def.Inputs)
 	if err != nil {
 		return err
 	}
 
-	err = l.addNinjaStringListDeps(def.Implicits)
+	err = l.innerAddNinjaStringListDeps(def.Implicits)
 	if err != nil {
 		return err
 	}
 
-	err = l.addNinjaStringListDeps(def.OrderOnly)
+	err = l.innerAddNinjaStringListDeps(def.OrderOnly)
 	if err != nil {
 		return err
 	}
 
-	err = l.addNinjaStringListDeps(def.Validations)
+	err = l.innerAddNinjaStringListDeps(def.Validations)
 	if err != nil {
 		return err
 	}
 
 	for _, value := range def.Variables {
-		err = l.addNinjaStringDeps(value)
+		err = l.innerAddNinjaStringDeps(value)
 		if err != nil {
 			return err
 		}
 	}
 
 	for _, value := range def.Args {
-		err = l.addNinjaStringDeps(value)
+		err = l.innerAddNinjaStringDeps(value)
 		if err != nil {
 			return err
 		}
@@ -93,6 +93,12 @@ func (l *liveTracker) AddBuildDefDeps(def *buildDef) error {
 }
 
 func (l *liveTracker) addRule(r Rule) (def *ruleDef, err error) {
+	l.Lock()
+	defer l.Unlock()
+	return l.innerAddRule(r)
+}
+
+func (l *liveTracker) innerAddRule(r Rule) (def *ruleDef, err error) {
 	def, ok := l.rules[r]
 	if !ok {
 		def, err = r.def(l.config)
@@ -105,24 +111,24 @@ func (l *liveTracker) addRule(r Rule) (def *ruleDef, err error) {
 		}
 
 		if def.Pool != nil {
-			err = l.addPool(def.Pool)
+			err = l.innerAddPool(def.Pool)
 			if err != nil {
 				return nil, err
 			}
 		}
 
-		err = l.addNinjaStringListDeps(def.CommandDeps)
+		err = l.innerAddNinjaStringListDeps(def.CommandDeps)
 		if err != nil {
 			return nil, err
 		}
 
-		err = l.addNinjaStringListDeps(def.CommandOrderOnly)
+		err = l.innerAddNinjaStringListDeps(def.CommandOrderOnly)
 		if err != nil {
 			return nil, err
 		}
 
 		for _, value := range def.Variables {
-			err = l.addNinjaStringDeps(value)
+			err = l.innerAddNinjaStringDeps(value)
 			if err != nil {
 				return nil, err
 			}
@@ -135,6 +141,12 @@ func (l *liveTracker) addRule(r Rule) (def *ruleDef, err error) {
 }
 
 func (l *liveTracker) addPool(p Pool) error {
+	l.Lock()
+	defer l.Unlock()
+	return l.addPool(p)
+}
+
+func (l *liveTracker) innerAddPool(p Pool) error {
 	_, ok := l.pools[p]
 	if !ok {
 		def, err := p.def(l.config)
@@ -153,6 +165,12 @@ func (l *liveTracker) addPool(p Pool) error {
 }
 
 func (l *liveTracker) addVariable(v Variable) error {
+	l.Lock()
+	defer l.Unlock()
+	return l.innerAddVariable(v)
+}
+
+func (l *liveTracker) innerAddVariable(v Variable) error {
 	_, ok := l.variables[v]
 	if !ok {
 		ctx := &variableFuncContext{l.ctx}
@@ -170,7 +188,7 @@ func (l *liveTracker) addVariable(v Variable) error {
 
 		l.variables[v] = value
 
-		err = l.addNinjaStringDeps(value)
+		err = l.innerAddNinjaStringDeps(value)
 		if err != nil {
 			return err
 		}
@@ -180,8 +198,14 @@ func (l *liveTracker) addVariable(v Variable) error {
 }
 
 func (l *liveTracker) addNinjaStringListDeps(list []ninjaString) error {
+	l.Lock()
+	defer l.Unlock()
+	return l.innerAddNinjaStringListDeps(list)
+}
+
+func (l *liveTracker) innerAddNinjaStringListDeps(list []ninjaString) error {
 	for _, str := range list {
-		err := l.addNinjaStringDeps(str)
+		err := l.innerAddNinjaStringDeps(str)
 		if err != nil {
 			return err
 		}
@@ -190,8 +214,14 @@ func (l *liveTracker) addNinjaStringListDeps(list []ninjaString) error {
 }
 
 func (l *liveTracker) addNinjaStringDeps(str ninjaString) error {
+	l.Lock()
+	defer l.Unlock()
+	return l.innerAddNinjaStringDeps(str)
+}
+
+func (l *liveTracker) innerAddNinjaStringDeps(str ninjaString) error {
 	for _, v := range str.Variables() {
-		err := l.addVariable(v)
+		err := l.innerAddVariable(v)
 		if err != nil {
 			return err
 		}
