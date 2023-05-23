@@ -349,6 +349,8 @@ type BaseModuleContext interface {
 	// is not of the appropriate type, or if the value has already been set.  The value should not
 	// be modified after being passed to SetProvider.
 	SetProvider(provider ProviderKey, value interface{})
+
+	EarlyGetMissingDependencies() []string
 }
 
 type DynamicDependerModuleContext BottomUpMutatorContext
@@ -804,6 +806,10 @@ func (m *moduleContext) Build(pctx PackageContext, params BuildParams) {
 
 func (m *moduleContext) GetMissingDependencies() []string {
 	m.handledMissingDeps = true
+	return m.module.missingDeps
+}
+
+func (m *baseModuleContext) EarlyGetMissingDependencies() []string {
 	return m.module.missingDeps
 }
 
