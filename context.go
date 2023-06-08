@@ -2734,6 +2734,7 @@ type JSONDataSupplier interface {
 type JSONAction struct {
 	Inputs  []string
 	Outputs []string
+	Desc    string
 }
 
 // JSONActionSupplier allows JSON representation of additional actions that are not registered in
@@ -2778,14 +2779,18 @@ func jsonModuleWithActionsFromModuleInfo(m *moduleInfo) *JsonModule {
 	}
 	var actions []JSONAction
 	for _, bDef := range m.actionDefs.buildDefs {
-		actions = append(actions, JSONAction{
+		a := JSONAction{
 			Inputs: append(
 				getNinjaStringsWithNilPkgNames(bDef.Inputs),
 				getNinjaStringsWithNilPkgNames(bDef.Implicits)...),
 			Outputs: append(
 				getNinjaStringsWithNilPkgNames(bDef.Outputs),
 				getNinjaStringsWithNilPkgNames(bDef.ImplicitOutputs)...),
-		})
+		}
+		if d, ok := bDef.Variables["description"]; ok {
+			a.Desc = d.Value(nil)
+		}
+		actions = append(actions, a)
 	}
 
 	if j, ok := m.logicModule.(JSONActionSupplier); ok {
