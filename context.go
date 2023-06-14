@@ -137,8 +137,12 @@ type Context struct {
 	// True for any mutators that have already run over all modules
 	finishedMutators map[*mutatorInfo]bool
 
-	// Can be set by tests to avoid invalidating Module values after mutators.
-	skipCloneModulesAfterMutators bool
+	// If true, RunBlueprint will skip cloning modules at the end of RunBlueprint.
+	// Cloning modules intentionally invalidates some Module values after
+	// mutators run (to ensure that mutators don't set such Module values in a way
+	// which ruins the integrity of the graph). However, keeping Module values
+	// changed by mutators may be a desirable outcome (such as for tooling or tests).
+	SkipCloneModulesAfterMutators bool
 
 	// String values that can be used to gate build graph traversal
 	includeTags *IncludeTags
@@ -1983,9 +1987,11 @@ func (c *Context) resolveDependencies(ctx context.Context, config interface{}) (
 		}
 		deps = append(deps, mutatorDeps...)
 
-		if !c.skipCloneModulesAfterMutators {
+		c.BeginEvent("clone_modules")
+		if !c.SkipCloneModulesAfterMutators {
 			c.cloneModules()
 		}
+		defer c.EndEvent("clone_modules")
 
 		c.dependenciesReady = true
 	})

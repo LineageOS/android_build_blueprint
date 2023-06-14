@@ -283,7 +283,7 @@ func TestInvalidProvidersUsage(t *testing.T) {
 		ctx.RegisterTopDownMutator("parent", invalidProviderUsageParentMutator)
 
 		// Don't invalidate the parent pointer and before GenerateBuildActions.
-		ctx.skipCloneModulesAfterMutators = true
+		ctx.SkipCloneModulesAfterMutators = true
 
 		var parentBP, moduleUnderTestBP, childBP string
 
