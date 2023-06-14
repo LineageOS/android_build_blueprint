@@ -29,7 +29,7 @@ type Variable interface {
 	name() string                                        // "foo"
 	fullName(pkgNames map[*packageContext]string) string // "pkg.foo" or "path.to.pkg.foo"
 	memoizeFullName(pkgNames map[*packageContext]string) // precompute fullName if desired
-	value(ctx VariableFuncContext, config interface{}) (ninjaString, error)
+	value(ctx VariableFuncContext, config interface{}) (*ninjaString, error)
 	String() string
 }
 
@@ -354,7 +354,7 @@ func (s *localScope) AddLocalRule(name string, params *RuleParams,
 type localVariable struct {
 	fullName_ string
 	name_     string
-	value_    ninjaString
+	value_    *ninjaString
 }
 
 func (l *localVariable) packageContext() *packageContext {
@@ -373,7 +373,7 @@ func (l *localVariable) memoizeFullName(pkgNames map[*packageContext]string) {
 	// Nothing to do, full name is known at initialization.
 }
 
-func (l *localVariable) value(VariableFuncContext, interface{}) (ninjaString, error) {
+func (l *localVariable) value(VariableFuncContext, interface{}) (*ninjaString, error) {
 	return l.value_, nil
 }
 
