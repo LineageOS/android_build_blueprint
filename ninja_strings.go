@@ -35,19 +35,28 @@ var (
 		":", "$:")
 )
 
-type ninjaString interface {
-	Value(pkgNames map[*packageContext]string) string
-	ValueWithEscaper(w io.StringWriter, pkgNames map[*packageContext]string, escaper *strings.Replacer)
-	Eval(variables map[Variable]ninjaString) (string, error)
-	Variables() []Variable
+// ninjaString contains the parsed result of a string that can contain references to variables (e.g. $cflags) that will
+// be propagated to the build.ninja file.  For literal strings with no variable references, the variables field will be
+// nil. For strings with variable references str contains the original, unparsed string, and variables contains a
+// pointer to a list of references, each with a span of bytes they should replace and a Variable interface.
+type ninjaString struct {
+	str       string
+	variables *[]variableReference
 }
 
-type varNinjaString struct {
-	strings   []string
-	variables []Variable
-}
+// variableReference contains information about a single reference to a variable (e.g. $cflags) inside a parsed
+// ninjaString.  start and end are int32 to reduce memory usage.  A nil variable is a special case of an inserted '$'
+// at the beginning of the string to handle leading whitespace that must not be stripped by ninja.
+type variableReference struct {
+	// start is the offset of the '$' character from the beginning of the unparsed string.
+	start int32
 
-type literalNinjaString string
+	// end is the offset of the character _after_ the final character of the variable name (or '}' if using the
+	//'${}'  syntax)
+	end int32
+
+	variable Variable
+}
 
 type scope interface {
 	LookupVariable(name string) (Variable, error)
@@ -55,36 +64,24 @@ type scope interface {
 	IsPoolVisible(pool Pool) bool
 }
 
-func simpleNinjaString(str string) ninjaString {
-	return literalNinjaString(str)
+func simpleNinjaString(str string) *ninjaString {
+	return &ninjaString{str: str}
 }
 
 type parseState struct {
-	scope       scope
-	str         string
-	pendingStr  string
-	stringStart int
-	varStart    int
-	result      *varNinjaString
+	scope        scope
+	str          string
+	varStart     int
+	varNameStart int
+	result       *ninjaString
 }
 
-func (ps *parseState) pushVariable(v Variable) {
-	if len(ps.result.variables) == len(ps.result.strings) {
-		// Last push was a variable, we need a blank string separator
-		ps.result.strings = append(ps.result.strings, "")
+func (ps *parseState) pushVariable(start, end int, v Variable) {
+	if ps.result.variables == nil {
+		ps.result.variables = &[]variableReference{{start: int32(start), end: int32(end), variable: v}}
+	} else {
+		*ps.result.variables = append(*ps.result.variables, variableReference{start: int32(start), end: int32(end), variable: v})
 	}
-	if ps.pendingStr != "" {
-		panic("oops, pushed variable with pending string")
-	}
-	ps.result.variables = append(ps.result.variables, v)
-}
-
-func (ps *parseState) pushString(s string) {
-	if len(ps.result.strings) != len(ps.result.variables) {
-		panic("oops, pushed string after string")
-	}
-	ps.result.strings = append(ps.result.strings, ps.pendingStr+s)
-	ps.pendingStr = ""
 }
 
 type stateFunc func(*parseState, int, rune) (stateFunc, error)
@@ -92,18 +89,19 @@ type stateFunc func(*parseState, int, rune) (stateFunc, error)
 // parseNinjaString parses an unescaped ninja string (i.e. all $<something>
 // occurrences are expected to be variables or $$) and returns a list of the
 // variable names that the string references.
-func parseNinjaString(scope scope, str string) (ninjaString, error) {
-	// naively pre-allocate slices by counting $ signs
+func parseNinjaString(scope scope, str string) (*ninjaString, error) {
+	// naively pre-allocate slice by counting $ signs
 	n := strings.Count(str, "$")
 	if n == 0 {
-		if strings.HasPrefix(str, " ") {
+		if len(str) > 0 && str[0] == ' ' {
 			str = "$" + str
 		}
-		return literalNinjaString(str), nil
+		return simpleNinjaString(str), nil
 	}
-	result := &varNinjaString{
-		strings:   make([]string, 0, n+1),
-		variables: make([]Variable, 0, n),
+	variableReferences := make([]variableReference, 0, n)
+	result := &ninjaString{
+		str:       str,
+		variables: &variableReferences,
 	}
 
 	parseState := &parseState{
@@ -127,12 +125,18 @@ func parseNinjaString(scope scope, str string) (ninjaString, error) {
 		return nil, err
 	}
 
+	// All the '$' characters counted initially could have been "$$" escapes, leaving no
+	// variable references.  Deallocate the variables slice if so.
+	if len(*result.variables) == 0 {
+		result.variables = nil
+	}
+
 	return result, nil
 }
 
 func parseFirstRuneState(state *parseState, i int, r rune) (stateFunc, error) {
 	if r == ' ' {
-		state.pendingStr += "$"
+		state.pushVariable(0, 1, nil)
 	}
 	return parseStringState(state, i, r)
 }
@@ -140,11 +144,10 @@ func parseFirstRuneState(state *parseState, i int, r rune) (stateFunc, error) {
 func parseStringState(state *parseState, i int, r rune) (stateFunc, error) {
 	switch {
 	case r == '$':
-		state.varStart = i + 1
+		state.varStart = i
 		return parseDollarStartState, nil
 
 	case r == eof:
-		state.pushString(state.str[state.stringStart:i])
 		return nil, nil
 
 	default:
@@ -156,21 +159,17 @@ func parseDollarStartState(state *parseState, i int, r rune) (stateFunc, error) 
 	switch {
 	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z',
 		r >= '0' && r <= '9', r == '_', r == '-':
-		// The beginning of a of the variable name.  Output the string and
-		// keep going.
-		state.pushString(state.str[state.stringStart : i-1])
+		// The beginning of a of the variable name.
+		state.varNameStart = i
 		return parseDollarState, nil
 
 	case r == '$':
-		// Just a "$$".  Go back to parseStringState without changing
-		// state.stringStart.
+		// Just a "$$".  Go back to parseStringState.
 		return parseStringState, nil
 
 	case r == '{':
-		// This is a bracketted variable name (e.g. "${blah.blah}").  Output
-		// the string and keep going.
-		state.pushString(state.str[state.stringStart : i-1])
-		state.varStart = i + 1
+		// This is a bracketted variable name (e.g. "${blah.blah}").
+		state.varNameStart = i + 1
 		return parseBracketsState, nil
 
 	case r == eof:
@@ -190,45 +189,26 @@ func parseDollarState(state *parseState, i int, r rune) (stateFunc, error) {
 		r >= '0' && r <= '9', r == '_', r == '-':
 		// A part of the variable name.  Keep going.
 		return parseDollarState, nil
+	}
 
+	// The variable name has ended, output what we have.
+	v, err := state.scope.LookupVariable(state.str[state.varNameStart:i])
+	if err != nil {
+		return nil, err
+	}
+
+	state.pushVariable(state.varStart, i, v)
+
+	switch {
 	case r == '$':
-		// A dollar after the variable name (e.g. "$blah$").  Output the
-		// variable we have and start a new one.
-		v, err := state.scope.LookupVariable(state.str[state.varStart:i])
-		if err != nil {
-			return nil, err
-		}
-
-		state.pushVariable(v)
-		state.varStart = i + 1
-		state.stringStart = i
-
+		// A dollar after the variable name (e.g. "$blah$").  Start a new one.
+		state.varStart = i
 		return parseDollarStartState, nil
 
 	case r == eof:
-		// This is the end of the variable name.
-		v, err := state.scope.LookupVariable(state.str[state.varStart:i])
-		if err != nil {
-			return nil, err
-		}
-
-		state.pushVariable(v)
-
-		// We always end with a string, even if it's an empty one.
-		state.pushString("")
-
 		return nil, nil
 
 	default:
-		// We've just gone past the end of the variable name, so record what
-		// we have.
-		v, err := state.scope.LookupVariable(state.str[state.varStart:i])
-		if err != nil {
-			return nil, err
-		}
-
-		state.pushVariable(v)
-		state.stringStart = i
 		return parseStringState, nil
 	}
 }
@@ -241,20 +221,19 @@ func parseBracketsState(state *parseState, i int, r rune) (stateFunc, error) {
 		return parseBracketsState, nil
 
 	case r == '}':
-		if state.varStart == i {
+		if state.varNameStart == i {
 			// The brackets were immediately closed.  That's no good.
 			return nil, fmt.Errorf("empty variable name at byte offset %d",
 				i)
 		}
 
 		// This is the end of the variable name.
-		v, err := state.scope.LookupVariable(state.str[state.varStart:i])
+		v, err := state.scope.LookupVariable(state.str[state.varNameStart:i])
 		if err != nil {
 			return nil, err
 		}
 
-		state.pushVariable(v)
-		state.stringStart = i + 1
+		state.pushVariable(state.varStart, i+1, v)
 		return parseStringState, nil
 
 	case r == eof:
@@ -267,13 +246,13 @@ func parseBracketsState(state *parseState, i int, r rune) (stateFunc, error) {
 	}
 }
 
-func parseNinjaStrings(scope scope, strs []string) ([]ninjaString,
+func parseNinjaStrings(scope scope, strs []string) ([]*ninjaString,
 	error) {
 
 	if len(strs) == 0 {
 		return nil, nil
 	}
-	result := make([]ninjaString, len(strs))
+	result := make([]*ninjaString, len(strs))
 	for i, str := range strs {
 		ninjaStr, err := parseNinjaString(scope, str)
 		if err != nil {
@@ -284,62 +263,78 @@ func parseNinjaStrings(scope scope, strs []string) ([]ninjaString,
 	return result, nil
 }
 
-func (n varNinjaString) Value(pkgNames map[*packageContext]string) string {
-	if len(n.strings) == 1 {
-		return defaultEscaper.Replace(n.strings[0])
+func (n *ninjaString) Value(pkgNames map[*packageContext]string) string {
+	if n.variables == nil || len(*n.variables) == 0 {
+		return defaultEscaper.Replace(n.str)
 	}
 	str := &strings.Builder{}
 	n.ValueWithEscaper(str, pkgNames, defaultEscaper)
 	return str.String()
 }
 
-func (n varNinjaString) ValueWithEscaper(w io.StringWriter, pkgNames map[*packageContext]string,
+func (n *ninjaString) ValueWithEscaper(w io.StringWriter, pkgNames map[*packageContext]string,
 	escaper *strings.Replacer) {
 
-	w.WriteString(escaper.Replace(n.strings[0]))
-	for i, v := range n.variables {
-		w.WriteString("${")
-		w.WriteString(v.fullName(pkgNames))
-		w.WriteString("}")
-		w.WriteString(escaper.Replace(n.strings[i+1]))
+	if n.variables == nil || len(*n.variables) == 0 {
+		w.WriteString(escaper.Replace(n.str))
+		return
 	}
-}
 
-func (n varNinjaString) Eval(variables map[Variable]ninjaString) (string, error) {
-	str := n.strings[0]
-	for i, v := range n.variables {
-		variable, ok := variables[v]
-		if !ok {
-			return "", fmt.Errorf("no such global variable: %s", v)
+	i := 0
+	for _, v := range *n.variables {
+		w.WriteString(escaper.Replace(n.str[i:v.start]))
+		if v.variable == nil {
+			w.WriteString("$ ")
+		} else {
+			w.WriteString("${")
+			w.WriteString(v.variable.fullName(pkgNames))
+			w.WriteString("}")
 		}
-		value, err := variable.Eval(variables)
-		if err != nil {
-			return "", err
-		}
-		str += value + n.strings[i+1]
+		i = int(v.end)
 	}
-	return str, nil
+	w.WriteString(escaper.Replace(n.str[i:len(n.str)]))
 }
 
-func (n varNinjaString) Variables() []Variable {
-	return n.variables
+func (n *ninjaString) Eval(variables map[Variable]*ninjaString) (string, error) {
+	if n.variables == nil || len(*n.variables) == 0 {
+		return n.str, nil
+	}
+
+	w := &strings.Builder{}
+	i := 0
+	for _, v := range *n.variables {
+		w.WriteString(n.str[i:v.start])
+		if v.variable == nil {
+			w.WriteString(" ")
+		} else {
+			variable, ok := variables[v.variable]
+			if !ok {
+				return "", fmt.Errorf("no such global variable: %s", v.variable)
+			}
+			value, err := variable.Eval(variables)
+			if err != nil {
+				return "", err
+			}
+			w.WriteString(value)
+		}
+		i = int(v.end)
+	}
+	w.WriteString(n.str[i:len(n.str)])
+	return w.String(), nil
 }
 
-func (l literalNinjaString) Value(_ map[*packageContext]string) string {
-	return defaultEscaper.Replace(string(l))
-}
+func (n *ninjaString) Variables() []Variable {
+	if n.variables == nil || len(*n.variables) == 0 {
+		return nil
+	}
 
-func (l literalNinjaString) ValueWithEscaper(w io.StringWriter, _ map[*packageContext]string,
-	escaper *strings.Replacer) {
-	w.WriteString(escaper.Replace(string(l)))
-}
-
-func (l literalNinjaString) Eval(variables map[Variable]ninjaString) (string, error) {
-	return string(l), nil
-}
-
-func (l literalNinjaString) Variables() []Variable {
-	return nil
+	variables := make([]Variable, 0, len(*n.variables))
+	for _, v := range *n.variables {
+		if v.variable != nil {
+			variables = append(variables, v.variable)
+		}
+	}
+	return variables
 }
 
 func validateNinjaName(name string) error {
