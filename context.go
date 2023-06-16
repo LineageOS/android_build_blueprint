@@ -103,15 +103,15 @@ type Context struct {
 	// set during PrepareBuildActions
 	pkgNames        map[*packageContext]string
 	liveGlobals     *liveTracker
-	globalVariables map[Variable]ninjaString
+	globalVariables map[Variable]*ninjaString
 	globalPools     map[Pool]*poolDef
 	globalRules     map[Rule]*ruleDef
 
 	// set during PrepareBuildActions
-	outDir             ninjaString // The builddir special Ninja variable
-	requiredNinjaMajor int         // For the ninja_required_version variable
-	requiredNinjaMinor int         // For the ninja_required_version variable
-	requiredNinjaMicro int         // For the ninja_required_version variable
+	outDir             *ninjaString // The builddir special Ninja variable
+	requiredNinjaMajor int          // For the ninja_required_version variable
+	requiredNinjaMinor int          // For the ninja_required_version variable
+	requiredNinjaMicro int          // For the ninja_required_version variable
 
 	subninjas []string
 
@@ -2814,7 +2814,7 @@ func jsonModuleWithActionsFromModuleInfo(m *moduleInfo) *JsonModule {
 
 // Gets a list of strings from the given list of ninjaStrings by invoking ninjaString.Value with
 // nil pkgNames on each of the input ninjaStrings.
-func getNinjaStringsWithNilPkgNames(nStrs []ninjaString) []string {
+func getNinjaStringsWithNilPkgNames(nStrs []*ninjaString) []string {
 	var strs []string
 	for _, nstr := range nStrs {
 		strs = append(strs, nstr.Value(nil))
@@ -3820,7 +3820,7 @@ func (c *Context) requireNinjaVersion(major, minor, micro int) {
 	}
 }
 
-func (c *Context) setOutDir(value ninjaString) {
+func (c *Context) setOutDir(value *ninjaString) {
 	if c.outDir == nil {
 		c.outDir = value
 	}
@@ -3901,7 +3901,7 @@ func (c *Context) memoizeFullNames(liveGlobals *liveTracker, pkgNames map[*packa
 }
 
 func (c *Context) checkForVariableReferenceCycles(
-	variables map[Variable]ninjaString, pkgNames map[*packageContext]string) {
+	variables map[Variable]*ninjaString, pkgNames map[*packageContext]string) {
 
 	visited := make(map[Variable]bool)  // variables that were already checked
 	checking := make(map[Variable]bool) // variables actively being checked
@@ -4696,7 +4696,7 @@ type phonyCandidate struct {
 // keyForPhonyCandidate gives a unique identifier for a set of deps.
 // If any of the deps use a variable, we return an empty string to signal
 // that this set of deps is ineligible for extraction.
-func keyForPhonyCandidate(deps []ninjaString) string {
+func keyForPhonyCandidate(deps []*ninjaString) string {
 	hasher := sha256.New()
 	for _, d := range deps {
 		if len(d.Variables()) != 0 {
@@ -4727,7 +4727,7 @@ func scanBuildDef(wg *sync.WaitGroup, candidates *sync.Map, phonyCount *atomic.U
 			phonyCount.Add(1)
 			m.phony = &buildDef{
 				Rule:     Phony,
-				Outputs:  []ninjaString{simpleNinjaString("dedup-" + key)},
+				Outputs:  []*ninjaString{simpleNinjaString("dedup-" + key)},
 				Inputs:   m.first.OrderOnly, //we could also use b.OrderOnly
 				Optional: true,
 			}
