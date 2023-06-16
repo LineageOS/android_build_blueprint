@@ -21,143 +21,176 @@ import (
 	"testing"
 )
 
-var ninjaParseTestCases = []struct {
-	input   string
-	vars    []string
-	strs    []string
-	literal bool
-	err     string
-}{
-	{
-		input: "abc def $ghi jkl",
-		vars:  []string{"ghi"},
-		strs:  []string{"abc def ", " jkl"},
-	},
-	{
-		input: "abc def $ghi$jkl",
-		vars:  []string{"ghi", "jkl"},
-		strs:  []string{"abc def ", "", ""},
-	},
-	{
-		input: "foo $012_-345xyz_! bar",
-		vars:  []string{"012_-345xyz_"},
-		strs:  []string{"foo ", "! bar"},
-	},
-	{
-		input: "foo ${012_-345xyz_} bar",
-		vars:  []string{"012_-345xyz_"},
-		strs:  []string{"foo ", " bar"},
-	},
-	{
-		input: "foo ${012_-345xyz_} bar",
-		vars:  []string{"012_-345xyz_"},
-		strs:  []string{"foo ", " bar"},
-	},
-	{
-		input: "foo $$ bar",
-		vars:  nil,
-		strs:  []string{"foo $$ bar"},
-		// this is technically a literal, but not recognized as such due to the $$
-	},
-	{
-		input: "$foo${bar}",
-		vars:  []string{"foo", "bar"},
-		strs:  []string{"", "", ""},
-	},
-	{
-		input: "$foo$$",
-		vars:  []string{"foo"},
-		strs:  []string{"", "$$"},
-	},
-	{
-		input:   "foo bar",
-		vars:    nil,
-		strs:    []string{"foo bar"},
-		literal: true,
-	},
-	{
-		input:   " foo ",
-		vars:    nil,
-		strs:    []string{"$ foo "},
-		literal: true,
-	},
-	{
-		input: " $foo ",
-		vars:  []string{"foo"},
-		strs:  []string{"$ ", " "},
-	}, {
-		input: "foo $ bar",
-		err:   `error parsing ninja string "foo $ bar": invalid character after '$' at byte offset 5`,
-	},
-	{
-		input: "foo $",
-		err:   "unexpected end of string after '$'",
-	},
-	{
-		input: "foo ${} bar",
-		err:   `error parsing ninja string "foo ${} bar": empty variable name at byte offset 6`,
-	},
-	{
-		input: "foo ${abc!} bar",
-		err:   `error parsing ninja string "foo ${abc!} bar": invalid character in variable name at byte offset 9`,
-	},
-	{
-		input: "foo ${abc",
-		err:   "unexpected end of string in variable name",
-	},
+type testVariableRef struct {
+	start, end int
+	name       string
 }
 
 func TestParseNinjaString(t *testing.T) {
-	for _, testCase := range ninjaParseTestCases {
-		scope := newLocalScope(nil, "namespace")
-		expectedVars := []Variable{}
-		for _, varName := range testCase.vars {
-			v, err := scope.LookupVariable(varName)
-			if err != nil {
-				v, err = scope.AddLocalVariable(varName, "")
+	testCases := []struct {
+		input string
+		vars  []string
+		value string
+		eval  string
+		err   string
+	}{
+		{
+			input: "abc def $ghi jkl",
+			vars:  []string{"ghi"},
+			value: "abc def ${namespace.ghi} jkl",
+			eval:  "abc def GHI jkl",
+		},
+		{
+			input: "abc def $ghi$jkl",
+			vars:  []string{"ghi", "jkl"},
+			value: "abc def ${namespace.ghi}${namespace.jkl}",
+			eval:  "abc def GHIJKL",
+		},
+		{
+			input: "foo $012_-345xyz_! bar",
+			vars:  []string{"012_-345xyz_"},
+			value: "foo ${namespace.012_-345xyz_}! bar",
+			eval:  "foo 012_-345XYZ_! bar",
+		},
+		{
+			input: "foo ${012_-345xyz_} bar",
+			vars:  []string{"012_-345xyz_"},
+			value: "foo ${namespace.012_-345xyz_} bar",
+			eval:  "foo 012_-345XYZ_ bar",
+		},
+		{
+			input: "foo ${012_-345xyz_} bar",
+			vars:  []string{"012_-345xyz_"},
+			value: "foo ${namespace.012_-345xyz_} bar",
+			eval:  "foo 012_-345XYZ_ bar",
+		},
+		{
+			input: "foo $$ bar",
+			vars:  nil,
+			value: "foo $$ bar",
+			eval:  "foo $$ bar",
+		},
+		{
+			input: "$foo${bar}",
+			vars:  []string{"foo", "bar"},
+			value: "${namespace.foo}${namespace.bar}",
+			eval:  "FOOBAR",
+		},
+		{
+			input: "$foo$$",
+			vars:  []string{"foo"},
+			value: "${namespace.foo}$$",
+			eval:  "FOO$$",
+		},
+		{
+			input: "foo bar",
+			vars:  nil,
+			value: "foo bar",
+			eval:  "foo bar",
+		},
+		{
+			input: " foo ",
+			vars:  nil,
+			value: "$ foo ",
+			eval:  "$ foo ",
+		},
+		{
+			input: "\tfoo ",
+			vars:  nil,
+			value: "\tfoo ",
+			eval:  "\tfoo ",
+		},
+		{
+			input: "\nfoo ",
+			vars:  nil,
+			value: "$\nfoo ",
+			eval:  "\nfoo ",
+		},
+		{
+			input: " $foo ",
+			vars:  []string{"foo"},
+			value: "$ ${namespace.foo} ",
+			eval:  " FOO ",
+		},
+		{
+			input: "\t$foo ",
+			vars:  []string{"foo"},
+			value: "\t${namespace.foo} ",
+			eval:  "\tFOO ",
+		},
+		{
+			input: "\n$foo ",
+			vars:  []string{"foo"},
+			value: "$\n${namespace.foo} ",
+			eval:  "\nFOO ",
+		},
+		{
+			input: "foo $ bar",
+			err:   `error parsing ninja string "foo $ bar": invalid character after '$' at byte offset 5`,
+		},
+		{
+			input: "foo $",
+			err:   "unexpected end of string after '$'",
+		},
+		{
+			input: "foo ${} bar",
+			err:   `error parsing ninja string "foo ${} bar": empty variable name at byte offset 6`,
+		},
+		{
+			input: "foo ${abc!} bar",
+			err:   `error parsing ninja string "foo ${abc!} bar": invalid character in variable name at byte offset 9`,
+		},
+		{
+			input: "foo ${abc",
+			err:   "unexpected end of string in variable name",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.input, func(t *testing.T) {
+			scope := newLocalScope(nil, "namespace.")
+			variablesMap := map[Variable]*ninjaString{}
+			for _, varName := range testCase.vars {
+				_, err := scope.LookupVariable(varName)
 				if err != nil {
-					t.Fatalf("error creating scope: %s", err)
+					v, err := scope.AddLocalVariable(varName, strings.ToUpper(varName))
+					if err != nil {
+						t.Fatalf("error creating scope: %s", err)
+					}
+					variablesMap[v] = simpleNinjaString(strings.ToUpper(varName))
 				}
 			}
-			expectedVars = append(expectedVars, v)
-		}
 
-		var expected ninjaString
-		if len(testCase.strs) > 0 {
-			if testCase.literal {
-				expected = literalNinjaString(testCase.strs[0])
-			} else {
-				expected = &varNinjaString{
-					strings:   testCase.strs,
-					variables: expectedVars,
+			output, err := parseNinjaString(scope, testCase.input)
+			if err == nil {
+				if g, w := output.Value(nil), testCase.value; g != w {
+					t.Errorf("incorrect Value output, want %q, got %q", w, g)
+				}
+
+				eval, err := output.Eval(variablesMap)
+				if err != nil {
+					t.Errorf("unexpected error in Eval: %s", err)
+				}
+				if g, w := eval, testCase.eval; g != w {
+					t.Errorf("incorrect Eval output, want %q, got %q", w, g)
 				}
 			}
-		}
-
-		output, err := parseNinjaString(scope, testCase.input)
-		if err == nil {
-			if !reflect.DeepEqual(output, expected) {
-				t.Errorf("incorrect ninja string:")
+			var errStr string
+			if err != nil {
+				errStr = err.Error()
+			}
+			if err != nil && err.Error() != testCase.err {
+				t.Errorf("unexpected error:")
 				t.Errorf("     input: %q", testCase.input)
-				t.Errorf("  expected: %#v", expected)
-				t.Errorf("       got: %#v", output)
+				t.Errorf("  expected: %q", testCase.err)
+				t.Errorf("       got: %q", errStr)
 			}
-		}
-		var errStr string
-		if err != nil {
-			errStr = err.Error()
-		}
-		if err != nil && err.Error() != testCase.err {
-			t.Errorf("unexpected error:")
-			t.Errorf("     input: %q", testCase.input)
-			t.Errorf("  expected: %q", testCase.err)
-			t.Errorf("       got: %q", errStr)
-		}
+		})
 	}
 }
 
 func TestParseNinjaStringWithImportedVar(t *testing.T) {
-	ImpVar := &staticVariable{name_: "ImpVar"}
+	ImpVar := &staticVariable{name_: "ImpVar", fullName_: "g.impPkg.ImpVar"}
 	impScope := newScope(nil)
 	impScope.AddVariable(ImpVar)
 	scope := newScope(nil)
@@ -169,13 +202,59 @@ func TestParseNinjaStringWithImportedVar(t *testing.T) {
 		t.Fatalf("unexpected error: %s", err)
 	}
 
-	expect := []Variable{ImpVar}
-	if !reflect.DeepEqual(output.(*varNinjaString).variables, expect) {
+	expect := []variableReference{{8, 24, ImpVar}}
+	if !reflect.DeepEqual(*output.variables, expect) {
 		t.Errorf("incorrect output:")
 		t.Errorf("     input: %q", input)
 		t.Errorf("  expected: %#v", expect)
-		t.Errorf("       got: %#v", output)
+		t.Errorf("       got: %#v", *output.variables)
 	}
+
+	if g, w := output.Value(nil), "abc def ${g.impPkg.ImpVar} ghi"; g != w {
+		t.Errorf("incorrect Value output, want %q got %q", w, g)
+	}
+}
+
+func Benchmark_parseNinjaString(b *testing.B) {
+	b.Run("constant", func(b *testing.B) {
+		for _, l := range []int{1, 10, 100, 1000} {
+			b.Run(strconv.Itoa(l), func(b *testing.B) {
+				b.ReportAllocs()
+				for n := 0; n < b.N; n++ {
+					_ = simpleNinjaString(strings.Repeat("a", l))
+				}
+			})
+		}
+	})
+	b.Run("variable", func(b *testing.B) {
+		for _, l := range []int{1, 10, 100, 1000} {
+			scope := newLocalScope(nil, "")
+			scope.AddLocalVariable("a", strings.Repeat("b", l/3))
+			b.Run(strconv.Itoa(l), func(b *testing.B) {
+				b.ReportAllocs()
+				for n := 0; n < b.N; n++ {
+					_, _ = parseNinjaString(scope, strings.Repeat("a", l/3)+"${a}"+strings.Repeat("a", l/3))
+				}
+			})
+		}
+	})
+	b.Run("variables", func(b *testing.B) {
+		for _, l := range []int{1, 2, 3, 4, 5, 10, 100, 1000} {
+			scope := newLocalScope(nil, "")
+			str := strings.Repeat("a", 10)
+			for i := 0; i < l; i++ {
+				scope.AddLocalVariable("a"+strconv.Itoa(i), strings.Repeat("b", 10))
+				str += "${a" + strconv.Itoa(i) + "}"
+			}
+			b.Run(strconv.Itoa(l), func(b *testing.B) {
+				b.ReportAllocs()
+				for n := 0; n < b.N; n++ {
+					_, _ = parseNinjaString(scope, str)
+				}
+			})
+		}
+	})
+
 }
 
 func BenchmarkNinjaString_Value(b *testing.B) {
@@ -183,6 +262,7 @@ func BenchmarkNinjaString_Value(b *testing.B) {
 		for _, l := range []int{1, 10, 100, 1000} {
 			ns := simpleNinjaString(strings.Repeat("a", l))
 			b.Run(strconv.Itoa(l), func(b *testing.B) {
+				b.ReportAllocs()
 				for n := 0; n < b.N; n++ {
 					ns.Value(nil)
 				}
@@ -195,6 +275,7 @@ func BenchmarkNinjaString_Value(b *testing.B) {
 			scope.AddLocalVariable("a", strings.Repeat("b", l/3))
 			ns, _ := parseNinjaString(scope, strings.Repeat("a", l/3)+"${a}"+strings.Repeat("a", l/3))
 			b.Run(strconv.Itoa(l), func(b *testing.B) {
+				b.ReportAllocs()
 				for n := 0; n < b.N; n++ {
 					ns.Value(nil)
 				}
@@ -211,6 +292,7 @@ func BenchmarkNinjaString_Value(b *testing.B) {
 			}
 			ns, _ := parseNinjaString(scope, str)
 			b.Run(strconv.Itoa(l), func(b *testing.B) {
+				b.ReportAllocs()
 				for n := 0; n < b.N; n++ {
 					ns.Value(nil)
 				}
