@@ -114,7 +114,7 @@ func (n *ninjaWriter) Rule(name string) error {
 }
 
 func (n *ninjaWriter) Build(comment string, rule string, outputs, implicitOuts,
-	explicitDeps, implicitDeps, orderOnlyDeps, validations []ninjaString,
+	explicitDeps, implicitDeps, orderOnlyDeps, validations []*ninjaString,
 	pkgNames map[*packageContext]string) error {
 
 	n.justDidBlankLine = false
@@ -235,7 +235,7 @@ func (n *ninjaWriter) ScopedAssign(name, value string) error {
 	return nil
 }
 
-func (n *ninjaWriter) Default(pkgNames map[*packageContext]string, targets ...ninjaString) error {
+func (n *ninjaWriter) Default(pkgNames map[*packageContext]string, targets ...*ninjaString) error {
 	n.justDidBlankLine = false
 
 	const lineWrapLen = len(" $")

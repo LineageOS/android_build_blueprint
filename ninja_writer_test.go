@@ -139,7 +139,7 @@ func TestNinjaWriter(t *testing.T) {
 	}
 }
 
-func testNinjaStrings(s ...string) []ninjaString {
+func testNinjaStrings(s ...string) []*ninjaString {
 	ret, _ := parseNinjaStrings(nil, s)
 	return ret
 }
