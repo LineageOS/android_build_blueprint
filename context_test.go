@@ -1159,10 +1159,10 @@ func TestPackageIncludes(t *testing.T) {
 }
 
 func TestDeduplicateOrderOnlyDeps(t *testing.T) {
-	outputs := func(names ...string) []ninjaString {
-		r := make([]ninjaString, len(names))
+	outputs := func(names ...string) []*ninjaString {
+		r := make([]*ninjaString, len(names))
 		for i, name := range names {
-			r[i] = literalNinjaString(name)
+			r[i] = simpleNinjaString(name)
 		}
 		return r
 	}
@@ -1179,7 +1179,7 @@ func TestDeduplicateOrderOnlyDeps(t *testing.T) {
 	type testcase struct {
 		modules        []*moduleInfo
 		expectedPhonys []*buildDef
-		conversions    map[string][]ninjaString
+		conversions    map[string][]*ninjaString
 	}
 	testCases := []testcase{{
 		modules: []*moduleInfo{
@@ -1189,7 +1189,7 @@ func TestDeduplicateOrderOnlyDeps(t *testing.T) {
 		expectedPhonys: []*buildDef{
 			b("dedup-GKw-c0PwFokMUQ6T-TUmEWnZ4_VlQ2Qpgw-vCTT0-OQ", []string{"d"}, nil),
 		},
-		conversions: map[string][]ninjaString{
+		conversions: map[string][]*ninjaString{
 			"A": outputs("dedup-GKw-c0PwFokMUQ6T-TUmEWnZ4_VlQ2Qpgw-vCTT0-OQ"),
 			"B": outputs("dedup-GKw-c0PwFokMUQ6T-TUmEWnZ4_VlQ2Qpgw-vCTT0-OQ"),
 		},
@@ -1205,7 +1205,7 @@ func TestDeduplicateOrderOnlyDeps(t *testing.T) {
 			m(b("C", nil, []string{"a"})),
 		},
 		expectedPhonys: []*buildDef{b("dedup-ypeBEsobvcr6wjGzmiPcTaeG7_gUfE5yuYB3ha_uSLs", []string{"a"}, nil)},
-		conversions: map[string][]ninjaString{
+		conversions: map[string][]*ninjaString{
 			"A": outputs("dedup-ypeBEsobvcr6wjGzmiPcTaeG7_gUfE5yuYB3ha_uSLs"),
 			"B": outputs("b"),
 			"C": outputs("dedup-ypeBEsobvcr6wjGzmiPcTaeG7_gUfE5yuYB3ha_uSLs"),
@@ -1220,7 +1220,7 @@ func TestDeduplicateOrderOnlyDeps(t *testing.T) {
 		expectedPhonys: []*buildDef{
 			b("dedup--44g_C5MPySMYMOb1lLzwTRymLuXe4tNWQO4UFViBgM", []string{"a", "b"}, nil),
 			b("dedup-9F3lHN7zCZFVHkHogt17VAR5lkigoAdT9E_JZuYVP8E", []string{"a", "c"}, nil)},
-		conversions: map[string][]ninjaString{
+		conversions: map[string][]*ninjaString{
 			"A": outputs("dedup--44g_C5MPySMYMOb1lLzwTRymLuXe4tNWQO4UFViBgM"),
 			"B": outputs("dedup--44g_C5MPySMYMOb1lLzwTRymLuXe4tNWQO4UFViBgM"),
 			"C": outputs("dedup-9F3lHN7zCZFVHkHogt17VAR5lkigoAdT9E_JZuYVP8E"),

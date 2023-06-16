@@ -25,7 +25,7 @@ type liveTracker struct {
 	config interface{} // Used to evaluate variable, rule, and pool values.
 	ctx    *Context    // Used to evaluate globs
 
-	variables map[Variable]ninjaString
+	variables map[Variable]*ninjaString
 	pools     map[Pool]*poolDef
 	rules     map[Rule]*ruleDef
 }
@@ -34,7 +34,7 @@ func newLiveTracker(ctx *Context, config interface{}) *liveTracker {
 	return &liveTracker{
 		ctx:       ctx,
 		config:    config,
-		variables: make(map[Variable]ninjaString),
+		variables: make(map[Variable]*ninjaString),
 		pools:     make(map[Pool]*poolDef),
 		rules:     make(map[Rule]*ruleDef),
 	}
@@ -197,13 +197,13 @@ func (l *liveTracker) innerAddVariable(v Variable) error {
 	return nil
 }
 
-func (l *liveTracker) addNinjaStringListDeps(list []ninjaString) error {
+func (l *liveTracker) addNinjaStringListDeps(list []*ninjaString) error {
 	l.Lock()
 	defer l.Unlock()
 	return l.innerAddNinjaStringListDeps(list)
 }
 
-func (l *liveTracker) innerAddNinjaStringListDeps(list []ninjaString) error {
+func (l *liveTracker) innerAddNinjaStringListDeps(list []*ninjaString) error {
 	for _, str := range list {
 		err := l.innerAddNinjaStringDeps(str)
 		if err != nil {
@@ -213,13 +213,13 @@ func (l *liveTracker) innerAddNinjaStringListDeps(list []ninjaString) error {
 	return nil
 }
 
-func (l *liveTracker) addNinjaStringDeps(str ninjaString) error {
+func (l *liveTracker) addNinjaStringDeps(str *ninjaString) error {
 	l.Lock()
 	defer l.Unlock()
 	return l.innerAddNinjaStringDeps(str)
 }
 
-func (l *liveTracker) innerAddNinjaStringDeps(str ninjaString) error {
+func (l *liveTracker) innerAddNinjaStringDeps(str *ninjaString) error {
 	for _, v := range str.Variables() {
 		err := l.innerAddVariable(v)
 		if err != nil {

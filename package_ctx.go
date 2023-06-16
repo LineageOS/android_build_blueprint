@@ -304,7 +304,7 @@ func (v *staticVariable) memoizeFullName(pkgNames map[*packageContext]string) {
 	v.fullName_ = v.fullName(pkgNames)
 }
 
-func (v *staticVariable) value(VariableFuncContext, interface{}) (ninjaString, error) {
+func (v *staticVariable) value(VariableFuncContext, interface{}) (*ninjaString, error) {
 	ninjaStr, err := parseNinjaString(v.pctx.scope, v.value_)
 	if err != nil {
 		err = fmt.Errorf("error parsing variable %s value: %s", v, err)
@@ -440,7 +440,7 @@ func (v *variableFunc) memoizeFullName(pkgNames map[*packageContext]string) {
 	v.fullName_ = v.fullName(pkgNames)
 }
 
-func (v *variableFunc) value(ctx VariableFuncContext, config interface{}) (ninjaString, error) {
+func (v *variableFunc) value(ctx VariableFuncContext, config interface{}) (*ninjaString, error) {
 	value, err := v.value_(ctx, config)
 	if err != nil {
 		return nil, err
@@ -504,7 +504,7 @@ func (v *argVariable) memoizeFullName(pkgNames map[*packageContext]string) {
 	// Nothing to do, full name is known at initialization.
 }
 
-func (v *argVariable) value(ctx VariableFuncContext, config interface{}) (ninjaString, error) {
+func (v *argVariable) value(ctx VariableFuncContext, config interface{}) (*ninjaString, error) {
 	return nil, errVariableIsArg
 }
 
