@@ -210,18 +210,21 @@ func (s *GlobSingleton) GenerateBuildActions(ctx blueprint.SingletonContext) {
 // Writes a .ninja file that contains instructions for regenerating the glob
 // files that contain the results of every glob that was run. The list of files
 // is available as the result of GlobFileListFiles().
-func WriteBuildGlobsNinjaFile(glob *GlobSingleton, config interface{}) {
+func WriteBuildGlobsNinjaFile(glob *GlobSingleton, config interface{}) error {
 	buffer, errs := generateGlobNinjaFile(glob, config)
 	if len(errs) > 0 {
-		fatalErrors(errs)
+		return fatalErrors(errs)
 	}
 
 	const outFilePermissions = 0666
 	err := ioutil.WriteFile(joinPath(glob.SrcDir, glob.GlobFile), buffer, outFilePermissions)
 	if err != nil {
-		fatalf("error writing %s: %s", glob.GlobFile, err)
+		return fmt.Errorf("error writing %s: %s", glob.GlobFile, err)
 	}
+
+	return nil
 }
+
 func generateGlobNinjaFile(glob *GlobSingleton, config interface{}) ([]byte, []error) {
 
 	ctx := blueprint.NewContext()
