@@ -41,6 +41,12 @@ type Args struct {
 	TraceFile  string
 }
 
+// RegisterGoModuleTypes adds module types to build tools written in golang
+func RegisterGoModuleTypes(ctx *blueprint.Context) {
+	ctx.RegisterModuleType("bootstrap_go_package", newGoPackageModuleFactory())
+	ctx.RegisterModuleType("blueprint_go_binary", newGoBinaryModuleFactory())
+}
+
 // RunBlueprint emits `args.OutFile` (a Ninja file) and returns the list of
 // its dependencies. These can be written to a `${args.OutFile}.d` file
 // so that it is correctly rebuilt when needed in case Blueprint is itself
@@ -90,9 +96,8 @@ func RunBlueprint(args Args, stopBefore StopBefore, ctx *blueprint.Context, conf
 	ctx.EndEvent("list_modules")
 
 	ctx.RegisterBottomUpMutator("bootstrap_plugin_deps", pluginDeps)
-	ctx.RegisterModuleType("bootstrap_go_package", newGoPackageModuleFactory())
-	ctx.RegisterModuleType("blueprint_go_binary", newGoBinaryModuleFactory())
 	ctx.RegisterSingletonType("bootstrap", newSingletonFactory(), false)
+	RegisterGoModuleTypes(ctx)
 	blueprint.RegisterPackageIncludesModuleType(ctx)
 
 	ctx.BeginEvent("parse_bp")
