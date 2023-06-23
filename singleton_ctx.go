@@ -265,7 +265,10 @@ func (s *singletonContext) Rule(pctx PackageContext, name string,
 func (s *singletonContext) Build(pctx PackageContext, params BuildParams) {
 	s.scope.ReparentTo(pctx)
 
-	def, err := parseBuildParams(s.scope, &params)
+	def, err := parseBuildParams(s.scope, &params, map[string]string{
+		"module_name": s.name,
+		"module_type": "singleton",
+	})
 	if err != nil {
 		panic(err)
 	}
