@@ -16,16 +16,16 @@ func ModuleTypeDocs(ctx *blueprint.Context, factories map[string]reflect.Value) 
 	// Find the module that's marked as the "primary builder", which means it's
 	// creating the binary that we'll use to generate the non-bootstrap
 	// build.ninja file.
-	var primaryBuilders []*goBinary
+	var primaryBuilders []*GoBinary
 	ctx.VisitAllModulesIf(isBootstrapBinaryModule,
 		func(module blueprint.Module) {
-			binaryModule := module.(*goBinary)
+			binaryModule := module.(*GoBinary)
 			if binaryModule.properties.PrimaryBuilder {
 				primaryBuilders = append(primaryBuilders, binaryModule)
 			}
 		})
 
-	var primaryBuilder *goBinary
+	var primaryBuilder *GoBinary
 	switch len(primaryBuilders) {
 	case 0:
 		return nil, fmt.Errorf("no primary builder module present")
@@ -40,7 +40,7 @@ func ModuleTypeDocs(ctx *blueprint.Context, factories map[string]reflect.Value) 
 	pkgFiles := make(map[string][]string)
 	ctx.VisitDepsDepthFirst(primaryBuilder, func(module blueprint.Module) {
 		switch m := module.(type) {
-		case (*goPackage):
+		case (*GoPackage):
 			pkgFiles[m.properties.PkgPath] = pathtools.PrefixPaths(m.properties.Srcs,
 				filepath.Join(ctx.SrcDir(), ctx.ModuleDir(m)))
 		default:
