@@ -275,8 +275,25 @@ type buildDef struct {
 	Optional        bool
 }
 
-func parseBuildParams(scope scope, params *BuildParams) (*buildDef,
-	error) {
+func formatTags(tags map[string]string, rule Rule) string {
+	// Maps in golang do not have a guaranteed iteration order, nor is there an
+	// ordered map type in the stdlib, but we need to deterministically generate
+	// the ninja file.
+	keys := make([]string, 0, len(tags))
+	for k := range tags {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	pairs := make([]string, 0, len(keys))
+	for _, k := range keys {
+		pairs = append(pairs, k+"="+tags[k])
+	}
+	pairs = append(pairs, "rule_name="+rule.name())
+	return strings.Join(pairs, ";")
+}
+
+func parseBuildParams(scope scope, params *BuildParams,
+	tags map[string]string) (*buildDef, error) {
 
 	comment := params.Comment
 	rule := params.Rule
@@ -358,6 +375,10 @@ func parseBuildParams(scope scope, params *BuildParams) (*buildDef,
 		setVariable(
 			"symlink_outputs",
 			simpleNinjaString(strings.Join(params.SymlinkOutputs, " ")))
+	}
+
+	if len(tags) > 0 {
+		setVariable("tags", simpleNinjaString(formatTags(tags, rule)))
 	}
 
 	argNameScope := rule.scope()
