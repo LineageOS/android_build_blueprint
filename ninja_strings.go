@@ -394,6 +394,10 @@ func validateArgName(argName string) error {
 		return fmt.Errorf("%q contains a '.' character", argName)
 	}
 
+	if argName == "tags" {
+		return fmt.Errorf("\"tags\" is a reserved argument name")
+	}
+
 	for _, builtin := range builtinRuleArgs {
 		if argName == builtin {
 			return fmt.Errorf("%q conflicts with Ninja built-in", argName)

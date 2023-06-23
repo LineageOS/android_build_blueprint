@@ -139,6 +139,14 @@ type EarlyModuleContext interface {
 	// Context.RegisterModuleType().
 	ModuleType() string
 
+	// ModuleTags returns the tags for this module that should be passed to
+	// ninja for analysis. For example:
+	// [
+	//   "module_name": "libfoo",
+	//   "module_type": "cc_library",
+	// ]
+	ModuleTags() map[string]string
+
 	// BlueprintsFile returns the name of the blueprint file that contains the definition of this
 	// module.
 	BlueprintsFile() string
@@ -404,6 +412,13 @@ func (d *baseModuleContext) ModuleName() string {
 
 func (d *baseModuleContext) ModuleType() string {
 	return d.module.typeName
+}
+
+func (d *baseModuleContext) ModuleTags() map[string]string {
+	return map[string]string{
+		"module_name": d.ModuleName(),
+		"module_type": d.ModuleType(),
+	}
 }
 
 func (d *baseModuleContext) ContainsProperty(name string) bool {
@@ -796,7 +811,7 @@ func (m *moduleContext) Rule(pctx PackageContext, name string,
 func (m *moduleContext) Build(pctx PackageContext, params BuildParams) {
 	m.scope.ReparentTo(pctx)
 
-	def, err := parseBuildParams(m.scope, &params)
+	def, err := parseBuildParams(m.scope, &params, m.ModuleTags())
 	if err != nil {
 		panic(err)
 	}
