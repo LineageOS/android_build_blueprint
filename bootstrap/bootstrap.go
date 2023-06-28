@@ -208,6 +208,7 @@ type GoPackage struct {
 		PkgPath   string
 		Srcs      []string
 		TestSrcs  []string
+		TestData  []string
 		PluginFor []string
 
 		Darwin struct {
@@ -368,6 +369,10 @@ func (g *GoPackage) Deps() []string {
 	return g.properties.Deps
 }
 
+func (g *GoPackage) TestData() []string {
+	return g.properties.TestData
+}
+
 // A GoBinary is a module for building executable binaries from Go sources.
 type GoBinary struct {
 	blueprint.SimpleName
@@ -375,6 +380,7 @@ type GoBinary struct {
 		Deps           []string
 		Srcs           []string
 		TestSrcs       []string
+		TestData       []string
 		PrimaryBuilder bool
 		Default        bool
 
@@ -438,6 +444,10 @@ func (g *GoBinary) DarwinTestSrcs() []string {
 
 func (g *GoBinary) Deps() []string {
 	return g.properties.Deps
+}
+
+func (g *GoBinary) TestData() []string {
+	return g.properties.TestData
 }
 
 func (g *GoBinary) GenerateBuildActions(ctx blueprint.ModuleContext) {
