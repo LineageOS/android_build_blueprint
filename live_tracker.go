@@ -229,6 +229,12 @@ func (l *liveTracker) innerAddNinjaStringDeps(str *ninjaString) error {
 	return nil
 }
 
+func (l *liveTracker) Eval(n *ninjaString) (string, error) {
+	l.Lock()
+	defer l.Unlock()
+	return n.Eval(l.variables)
+}
+
 func (l *liveTracker) RemoveVariableIfLive(v Variable) bool {
 	l.Lock()
 	defer l.Unlock()
