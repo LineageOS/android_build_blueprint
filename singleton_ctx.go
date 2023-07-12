@@ -289,7 +289,7 @@ func (s *singletonContext) Eval(pctx PackageContext, str string) (string, error)
 		return "", err
 	}
 
-	return ninjaStr.Eval(s.globals.variables)
+	return s.globals.Eval(ninjaStr)
 }
 
 func (s *singletonContext) RequireNinjaVersion(major, minor, micro int) {
