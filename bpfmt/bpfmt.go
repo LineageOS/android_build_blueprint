@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/blueprint/parser"
 )
@@ -110,9 +111,14 @@ func processReader(filename string, in io.Reader, out io.Writer) error {
 	return err
 }
 
+func isBlueprintFile(f os.FileInfo) bool {
+	name := f.Name()
+	return !f.IsDir() && (name == "Blueprints" || (!strings.HasPrefix(name, ".") && strings.HasSuffix(name, ".bp")))
+}
+
 func walkDir(path string) {
 	visitFile := func(path string, f os.FileInfo, err error) error {
-		if err == nil && f.Name() == "Blueprints" {
+		if err == nil && isBlueprintFile(f) {
 			err = processFile(path, os.Stdout)
 		}
 		if err != nil {
