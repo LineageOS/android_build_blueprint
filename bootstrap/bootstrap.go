@@ -320,12 +320,10 @@ func (g *GoPackage) GenerateBuildActions(ctx blueprint.ModuleContext) {
 		testSrcs = append(g.properties.TestSrcs, g.properties.Linux.TestSrcs...)
 	}
 
-	if ctx.Config().(BootstrapConfig).RunGoTests() {
-		testArchiveFile := filepath.Join(testRoot(ctx),
-			filepath.FromSlash(g.properties.PkgPath)+".a")
-		g.testResultFile = buildGoTest(ctx, testRoot(ctx), testArchiveFile,
-			g.properties.PkgPath, srcs, genSrcs, testSrcs)
-	}
+	testArchiveFile := filepath.Join(testRoot(ctx),
+		filepath.FromSlash(g.properties.PkgPath)+".a")
+	g.testResultFile = buildGoTest(ctx, testRoot(ctx), testArchiveFile,
+		g.properties.PkgPath, srcs, genSrcs, testSrcs)
 
 	// Don't build for test-only packages
 	if len(srcs) == 0 && len(genSrcs) == 0 {
@@ -493,10 +491,8 @@ func (g *GoBinary) GenerateBuildActions(ctx blueprint.ModuleContext) {
 		testSrcs = append(g.properties.TestSrcs, g.properties.Linux.TestSrcs...)
 	}
 
-	if ctx.Config().(BootstrapConfig).RunGoTests() {
-		testDeps = buildGoTest(ctx, testRoot(ctx), testArchiveFile,
-			name, srcs, genSrcs, testSrcs)
-	}
+	testDeps = buildGoTest(ctx, testRoot(ctx), testArchiveFile,
+		name, srcs, genSrcs, testSrcs)
 
 	buildGoPackage(ctx, objDir, "main", archiveFile, srcs, genSrcs)
 
@@ -525,11 +521,16 @@ func (g *GoBinary) GenerateBuildActions(ctx blueprint.ModuleContext) {
 		Optional:  true,
 	})
 
+	var validations []string
+	if ctx.Config().(BootstrapConfig).RunGoTests() {
+		validations = testDeps
+	}
+
 	ctx.Build(pctx, blueprint.BuildParams{
 		Rule:        cp,
 		Outputs:     []string{g.installPath},
 		Inputs:      []string{aoutFile},
-		Validations: testDeps,
+		Validations: validations,
 		Optional:    !g.properties.Default,
 	})
 }
@@ -688,6 +689,8 @@ func (s *singleton) GenerateBuildActions(ctx blueprint.SingletonContext) {
 	var primaryBuilders []*GoBinary
 	// blueprintTools contains blueprint go binaries that will be built in StageMain
 	var blueprintTools []string
+	// blueprintTools contains the test outputs of go tests that can be run in StageMain
+	var blueprintTests []string
 	// blueprintGoPackages contains all blueprint go packages that can be built in StageMain
 	var blueprintGoPackages []string
 	ctx.VisitAllModulesIf(IsBootstrapModule,
@@ -703,7 +706,7 @@ func (s *singleton) GenerateBuildActions(ctx blueprint.SingletonContext) {
 				if packageModule, ok := module.(*GoPackage); ok {
 					blueprintGoPackages = append(blueprintGoPackages,
 						packageModule.GoPackageTarget())
-					blueprintGoPackages = append(blueprintGoPackages,
+					blueprintTests = append(blueprintTests,
 						packageModule.GoTestTargets()...)
 				}
 			}
@@ -775,6 +778,13 @@ func (s *singleton) GenerateBuildActions(ctx blueprint.SingletonContext) {
 		Rule:    blueprint.Phony,
 		Outputs: []string{"blueprint_tools"},
 		Inputs:  blueprintTools,
+	})
+
+	// Add a phony target for running various tests that are part of blueprint
+	ctx.Build(pctx, blueprint.BuildParams{
+		Rule:    blueprint.Phony,
+		Outputs: []string{"blueprint_tests"},
+		Inputs:  blueprintTests,
 	})
 
 	// Add a phony target for running go tests
