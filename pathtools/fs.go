@@ -204,8 +204,6 @@ func (fs *osFs) Open(name string) (ReaderAtSeekerCloser, error) {
 }
 
 func (fs *osFs) Exists(name string) (bool, bool, error) {
-	fs.acquire()
-	defer fs.release()
 	stat, err := os.Stat(fs.toAbs(name))
 	if err == nil {
 		return true, stat.IsDir(), nil
@@ -217,8 +215,6 @@ func (fs *osFs) Exists(name string) (bool, bool, error) {
 }
 
 func (fs *osFs) IsDir(name string) (bool, error) {
-	fs.acquire()
-	defer fs.release()
 	info, err := os.Stat(fs.toAbs(name))
 	if err != nil {
 		return false, err
@@ -227,8 +223,6 @@ func (fs *osFs) IsDir(name string) (bool, error) {
 }
 
 func (fs *osFs) IsSymlink(name string) (bool, error) {
-	fs.acquire()
-	defer fs.release()
 	if info, err := os.Lstat(fs.toAbs(name)); err != nil {
 		return false, err
 	} else {
@@ -249,14 +243,10 @@ func (fs *osFs) glob(pattern string) ([]string, error) {
 }
 
 func (fs *osFs) Lstat(path string) (stats os.FileInfo, err error) {
-	fs.acquire()
-	defer fs.release()
 	return os.Lstat(fs.toAbs(path))
 }
 
 func (fs *osFs) Stat(path string) (stats os.FileInfo, err error) {
-	fs.acquire()
-	defer fs.release()
 	return os.Stat(fs.toAbs(path))
 }
 
@@ -284,8 +274,6 @@ func (fs *osFs) ReadDirNames(name string) ([]string, error) {
 }
 
 func (fs *osFs) Readlink(name string) (string, error) {
-	fs.acquire()
-	defer fs.release()
 	return os.Readlink(fs.toAbs(name))
 }
 
