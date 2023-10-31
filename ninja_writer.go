@@ -34,12 +34,12 @@ type StringWriterWriter interface {
 }
 
 type ninjaWriter struct {
-	writer io.StringWriter
+	writer StringWriterWriter
 
 	justDidBlankLine bool // true if the last operation was a BlankLine
 }
 
-func newNinjaWriter(writer io.StringWriter) *ninjaWriter {
+func newNinjaWriter(writer StringWriterWriter) *ninjaWriter {
 	return &ninjaWriter{
 		writer: writer,
 	}
@@ -115,6 +115,8 @@ func (n *ninjaWriter) Rule(name string) error {
 
 func (n *ninjaWriter) Build(comment string, rule string, outputs, implicitOuts,
 	explicitDeps, implicitDeps, orderOnlyDeps, validations []*ninjaString,
+	outputStrings, implicitOutStrings, explicitDepStrings,
+	implicitDepStrings, orderOnlyDepStrings, validationStrings []string,
 	pkgNames map[*packageContext]string) error {
 
 	n.justDidBlankLine = false
@@ -136,14 +138,22 @@ func (n *ninjaWriter) Build(comment string, rule string, outputs, implicitOuts,
 
 	wrapper.WriteString("build")
 
+	for _, output := range outputStrings {
+		wrapper.Space()
+		outputEscaper.WriteString(wrapper, output)
+	}
 	for _, output := range outputs {
 		wrapper.Space()
 		output.ValueWithEscaper(wrapper, pkgNames, outputEscaper)
 	}
 
-	if len(implicitOuts) > 0 {
+	if len(implicitOuts) > 0 || len(implicitOutStrings) > 0 {
 		wrapper.WriteStringWithSpace("|")
 
+		for _, out := range implicitOutStrings {
+			wrapper.Space()
+			outputEscaper.WriteString(wrapper, out)
+		}
 		for _, out := range implicitOuts {
 			wrapper.Space()
 			out.ValueWithEscaper(wrapper, pkgNames, outputEscaper)
@@ -154,32 +164,48 @@ func (n *ninjaWriter) Build(comment string, rule string, outputs, implicitOuts,
 
 	wrapper.WriteStringWithSpace(rule)
 
+	for _, dep := range explicitDepStrings {
+		wrapper.Space()
+		inputEscaper.WriteString(wrapper, dep)
+	}
 	for _, dep := range explicitDeps {
 		wrapper.Space()
 		dep.ValueWithEscaper(wrapper, pkgNames, inputEscaper)
 	}
 
-	if len(implicitDeps) > 0 {
+	if len(implicitDeps) > 0 || len(implicitDepStrings) > 0 {
 		wrapper.WriteStringWithSpace("|")
 
+		for _, dep := range implicitDepStrings {
+			wrapper.Space()
+			inputEscaper.WriteString(wrapper, dep)
+		}
 		for _, dep := range implicitDeps {
 			wrapper.Space()
 			dep.ValueWithEscaper(wrapper, pkgNames, inputEscaper)
 		}
 	}
 
-	if len(orderOnlyDeps) > 0 {
+	if len(orderOnlyDeps) > 0 || len(orderOnlyDepStrings) > 0 {
 		wrapper.WriteStringWithSpace("||")
 
+		for _, dep := range orderOnlyDepStrings {
+			wrapper.Space()
+			inputEscaper.WriteString(wrapper, dep)
+		}
 		for _, dep := range orderOnlyDeps {
 			wrapper.Space()
 			dep.ValueWithEscaper(wrapper, pkgNames, inputEscaper)
 		}
 	}
 
-	if len(validations) > 0 {
+	if len(validations) > 0 || len(validationStrings) > 0 {
 		wrapper.WriteStringWithSpace("|@")
 
+		for _, dep := range validationStrings {
+			wrapper.Space()
+			inputEscaper.WriteString(wrapper, dep)
+		}
 		for _, dep := range validations {
 			wrapper.Space()
 			dep.ValueWithEscaper(wrapper, pkgNames, inputEscaper)
@@ -235,7 +261,7 @@ func (n *ninjaWriter) ScopedAssign(name, value string) error {
 	return nil
 }
 
-func (n *ninjaWriter) Default(pkgNames map[*packageContext]string, targets ...*ninjaString) error {
+func (n *ninjaWriter) Default(pkgNames map[*packageContext]string, targets []*ninjaString, targetStrings []string) error {
 	n.justDidBlankLine = false
 
 	const lineWrapLen = len(" $")
@@ -248,6 +274,10 @@ func (n *ninjaWriter) Default(pkgNames map[*packageContext]string, targets ...*n
 
 	wrapper.WriteString("default")
 
+	for _, target := range targetStrings {
+		wrapper.Space()
+		outputEscaper.WriteString(wrapper, target)
+	}
 	for _, target := range targets {
 		wrapper.Space()
 		target.ValueWithEscaper(wrapper, pkgNames, outputEscaper)
@@ -347,6 +377,7 @@ func (n *ninjaWriterWithWrap) WriteString(s string) (written int, noError error)
 		n.lineLen = indentWidth*2 + n.pendingLen
 		s = strings.TrimLeftFunc(s, unicode.IsSpace)
 		n.pending = append(n.pending, s)
+		n.lineLen += len(s)
 		n.writePending()
 
 		n.space = false
@@ -359,6 +390,11 @@ func (n *ninjaWriterWithWrap) WriteString(s string) (written int, noError error)
 	}
 
 	return
+}
+
+func (n *ninjaWriterWithWrap) Write(p []byte) (written int, noError error) {
+	// Write is rarely used, implement it via WriteString.
+	return n.WriteString(string(p))
 }
 
 // Space inserts a space that is also a possible wrapping point into the string.

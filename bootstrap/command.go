@@ -135,7 +135,7 @@ func RunBlueprint(args Args, stopBefore StopBefore, ctx *blueprint.Context, conf
 	}
 
 	const outFilePermissions = 0666
-	var out io.StringWriter
+	var out blueprint.StringWriterWriter
 	var f *os.File
 	var buf *bufio.Writer
 
@@ -145,7 +145,7 @@ func RunBlueprint(args Args, stopBefore StopBefore, ctx *blueprint.Context, conf
 		if err := os.WriteFile(joinPath(ctx.SrcDir(), args.OutFile), []byte(nil), outFilePermissions); err != nil {
 			return nil, fmt.Errorf("error writing empty Ninja file: %s", err)
 		}
-		out = io.Discard.(io.StringWriter)
+		out = io.Discard.(blueprint.StringWriterWriter)
 	} else {
 		f, err := os.OpenFile(joinPath(ctx.SrcDir(), args.OutFile), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, outFilePermissions)
 		if err != nil {
