@@ -84,7 +84,6 @@ type Context struct {
 	moduleGroups        []*moduleGroup
 	moduleInfo          map[Module]*moduleInfo
 	modulesSorted       []*moduleInfo
-	preSingletonInfo    []*singletonInfo
 	singletonInfo       []*singletonInfo
 	mutatorInfo         []*mutatorInfo
 	variantMutatorNames []string
@@ -591,29 +590,6 @@ func (c *Context) RegisterSingletonType(name string, factory SingletonFactory, p
 		singleton: factory(),
 		name:      name,
 		parallel:  parallel,
-	})
-}
-
-// RegisterPreSingletonType registers a presingleton type that will be invoked to
-// generate build actions before any Blueprint files have been read.  Each registered
-// presingleton type is instantiated and invoked exactly once at the beginning of the
-// parse phase.  Each registered presingleton is invoked in registration order.
-//
-// The presingleton type names given here must be unique for the context.  The
-// factory function should be a named function so that its package and name can
-// be included in the generated Ninja file for debugging purposes.
-func (c *Context) RegisterPreSingletonType(name string, factory SingletonFactory) {
-	for _, s := range c.preSingletonInfo {
-		if s.name == name {
-			panic(fmt.Errorf("presingleton %q is already registered", name))
-		}
-	}
-
-	c.preSingletonInfo = append(c.preSingletonInfo, &singletonInfo{
-		factory:   factory,
-		singleton: factory(),
-		name:      name,
-		parallel:  false,
 	})
 }
 
@@ -1970,22 +1946,15 @@ func (c *Context) resolveDependencies(ctx context.Context, config interface{}) (
 
 		c.liveGlobals = newLiveTracker(c, config)
 
-		deps, errs = c.generateSingletonBuildActions(config, c.preSingletonInfo, c.liveGlobals)
-		if len(errs) > 0 {
-			return
-		}
-
 		errs = c.updateDependencies()
 		if len(errs) > 0 {
 			return
 		}
 
-		var mutatorDeps []string
-		mutatorDeps, errs = c.runMutators(ctx, config)
+		deps, errs = c.runMutators(ctx, config)
 		if len(errs) > 0 {
 			return
 		}
-		deps = append(deps, mutatorDeps...)
 
 		c.BeginEvent("clone_modules")
 		if !c.SkipCloneModulesAfterMutators {
