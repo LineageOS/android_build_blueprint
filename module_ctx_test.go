@@ -556,16 +556,6 @@ func addNinjaDepsTestTopDownMutator(ctx TopDownMutatorContext) {
 	ctx.AddNinjaFileDeps("TopDownMutator")
 }
 
-type addNinjaDepsTestPreSingleton struct{}
-
-func addNinjaDepsTestPreSingletonFactory() Singleton {
-	return &addNinjaDepsTestPreSingleton{}
-}
-
-func (s *addNinjaDepsTestPreSingleton) GenerateBuildActions(ctx SingletonContext) {
-	ctx.AddNinjaFileDeps("PreSingleton")
-}
-
 type addNinjaDepsTestSingleton struct{}
 
 func addNinjaDepsTestSingletonFactory() Singleton {
@@ -589,7 +579,6 @@ func TestAddNinjaFileDeps(t *testing.T) {
 	ctx.RegisterModuleType("test", addNinjaDepsTestModuleFactory)
 	ctx.RegisterBottomUpMutator("testBottomUpMutator", addNinjaDepsTestBottomUpMutator)
 	ctx.RegisterTopDownMutator("testTopDownMutator", addNinjaDepsTestTopDownMutator)
-	ctx.RegisterPreSingletonType("testPreSingleton", addNinjaDepsTestPreSingletonFactory)
 	ctx.RegisterSingletonType("testSingleton", addNinjaDepsTestSingletonFactory, false)
 	parseDeps, errs := ctx.ParseBlueprintsFiles("Android.bp", nil)
 	if len(errs) > 0 {
@@ -622,7 +611,7 @@ func TestAddNinjaFileDeps(t *testing.T) {
 		t.Errorf("ParseBlueprintsFiles: wanted deps %q, got %q", w, g)
 	}
 
-	if g, w := resolveDeps, []string{"PreSingleton", "BottomUpMutator", "TopDownMutator"}; !reflect.DeepEqual(g, w) {
+	if g, w := resolveDeps, []string{"BottomUpMutator", "TopDownMutator"}; !reflect.DeepEqual(g, w) {
 		t.Errorf("ResolveDependencies: wanted deps %q, got %q", w, g)
 	}
 
