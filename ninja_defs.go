@@ -261,18 +261,24 @@ func (r *ruleDef) WriteTo(nw *ninjaWriter, name string,
 
 // A buildDef describes a build target definition.
 type buildDef struct {
-	Comment         string
-	Rule            Rule
-	RuleDef         *ruleDef
-	Outputs         []*ninjaString
-	ImplicitOutputs []*ninjaString
-	Inputs          []*ninjaString
-	Implicits       []*ninjaString
-	OrderOnly       []*ninjaString
-	Validations     []*ninjaString
-	Args            map[Variable]*ninjaString
-	Variables       map[string]*ninjaString
-	Optional        bool
+	Comment               string
+	Rule                  Rule
+	RuleDef               *ruleDef
+	Outputs               []*ninjaString
+	OutputStrings         []string
+	ImplicitOutputs       []*ninjaString
+	ImplicitOutputStrings []string
+	Inputs                []*ninjaString
+	InputStrings          []string
+	Implicits             []*ninjaString
+	ImplicitStrings       []string
+	OrderOnly             []*ninjaString
+	OrderOnlyStrings      []string
+	Validations           []*ninjaString
+	ValidationStrings     []string
+	Args                  map[Variable]*ninjaString
+	Variables             map[string]*ninjaString
+	Optional              bool
 }
 
 func formatTags(tags map[string]string, rule Rule) string {
@@ -319,32 +325,32 @@ func parseBuildParams(scope scope, params *BuildParams,
 	}
 
 	var err error
-	b.Outputs, err = parseNinjaStrings(scope, params.Outputs)
+	b.Outputs, b.OutputStrings, err = parseNinjaOrSimpleStrings(scope, params.Outputs)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing Outputs param: %s", err)
 	}
 
-	b.ImplicitOutputs, err = parseNinjaStrings(scope, params.ImplicitOutputs)
+	b.ImplicitOutputs, b.ImplicitOutputStrings, err = parseNinjaOrSimpleStrings(scope, params.ImplicitOutputs)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing ImplicitOutputs param: %s", err)
 	}
 
-	b.Inputs, err = parseNinjaStrings(scope, params.Inputs)
+	b.Inputs, b.InputStrings, err = parseNinjaOrSimpleStrings(scope, params.Inputs)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing Inputs param: %s", err)
 	}
 
-	b.Implicits, err = parseNinjaStrings(scope, params.Implicits)
+	b.Implicits, b.ImplicitStrings, err = parseNinjaOrSimpleStrings(scope, params.Implicits)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing Implicits param: %s", err)
 	}
 
-	b.OrderOnly, err = parseNinjaStrings(scope, params.OrderOnly)
+	b.OrderOnly, b.OrderOnlyStrings, err = parseNinjaOrSimpleStrings(scope, params.OrderOnly)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing OrderOnly param: %s", err)
 	}
 
-	b.Validations, err = parseNinjaStrings(scope, params.Validations)
+	b.Validations, b.ValidationStrings, err = parseNinjaOrSimpleStrings(scope, params.Validations)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing Validations param: %s", err)
 	}
@@ -411,14 +417,20 @@ func parseBuildParams(scope scope, params *BuildParams,
 
 func (b *buildDef) WriteTo(nw *ninjaWriter, pkgNames map[*packageContext]string) error {
 	var (
-		comment       = b.Comment
-		rule          = b.Rule.fullName(pkgNames)
-		outputs       = b.Outputs
-		implicitOuts  = b.ImplicitOutputs
-		explicitDeps  = b.Inputs
-		implicitDeps  = b.Implicits
-		orderOnlyDeps = b.OrderOnly
-		validations   = b.Validations
+		comment             = b.Comment
+		rule                = b.Rule.fullName(pkgNames)
+		outputs             = b.Outputs
+		implicitOuts        = b.ImplicitOutputs
+		explicitDeps        = b.Inputs
+		implicitDeps        = b.Implicits
+		orderOnlyDeps       = b.OrderOnly
+		validations         = b.Validations
+		outputStrings       = b.OutputStrings
+		implicitOutStrings  = b.ImplicitOutputStrings
+		explicitDepStrings  = b.InputStrings
+		implicitDepStrings  = b.ImplicitStrings
+		orderOnlyDepStrings = b.OrderOnlyStrings
+		validationStrings   = b.ValidationStrings
 	)
 
 	if b.RuleDef != nil {
@@ -426,7 +438,10 @@ func (b *buildDef) WriteTo(nw *ninjaWriter, pkgNames map[*packageContext]string)
 		orderOnlyDeps = append(b.RuleDef.CommandOrderOnly, orderOnlyDeps...)
 	}
 
-	err := nw.Build(comment, rule, outputs, implicitOuts, explicitDeps, implicitDeps, orderOnlyDeps, validations, pkgNames)
+	err := nw.Build(comment, rule, outputs, implicitOuts, explicitDeps, implicitDeps, orderOnlyDeps, validations,
+		outputStrings, implicitOutStrings, explicitDepStrings,
+		implicitDepStrings, orderOnlyDepStrings, validationStrings,
+		pkgNames)
 	if err != nil {
 		return err
 	}
@@ -456,7 +471,7 @@ func (b *buildDef) WriteTo(nw *ninjaWriter, pkgNames map[*packageContext]string)
 	}
 
 	if !b.Optional {
-		err = nw.Default(pkgNames, outputs...)
+		err = nw.Default(pkgNames, outputs, outputStrings)
 		if err != nil {
 			return err
 		}

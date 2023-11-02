@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unsafe"
 )
 
 type testVariableRef struct {
@@ -212,6 +213,105 @@ func TestParseNinjaStringWithImportedVar(t *testing.T) {
 
 	if g, w := output.Value(nil), "abc def ${g.impPkg.ImpVar} ghi"; g != w {
 		t.Errorf("incorrect Value output, want %q got %q", w, g)
+	}
+}
+
+func Test_parseNinjaOrSimpleStrings(t *testing.T) {
+	testCases := []struct {
+		name            string
+		in              []string
+		outStrings      []string
+		outNinjaStrings []string
+		sameSlice       bool
+	}{
+		{
+			name:      "nil",
+			in:        nil,
+			sameSlice: true,
+		},
+		{
+			name:      "empty",
+			in:        []string{},
+			sameSlice: true,
+		},
+		{
+			name:      "string",
+			in:        []string{"abc"},
+			sameSlice: true,
+		},
+		{
+			name:            "ninja string",
+			in:              []string{"$abc"},
+			outStrings:      nil,
+			outNinjaStrings: []string{"${abc}"},
+		},
+		{
+			name:            "ninja string first",
+			in:              []string{"$abc", "def", "ghi"},
+			outStrings:      []string{"def", "ghi"},
+			outNinjaStrings: []string{"${abc}"},
+		},
+		{
+			name:            "ninja string middle",
+			in:              []string{"abc", "$def", "ghi"},
+			outStrings:      []string{"abc", "ghi"},
+			outNinjaStrings: []string{"${def}"},
+		},
+		{
+			name:            "ninja string last",
+			in:              []string{"abc", "def", "$ghi"},
+			outStrings:      []string{"abc", "def"},
+			outNinjaStrings: []string{"${ghi}"},
+		},
+	}
+
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			inCopy := append([]string(nil), tt.in...)
+
+			scope := newLocalScope(nil, "")
+			scope.AddLocalVariable("abc", "abc")
+			scope.AddLocalVariable("def", "def")
+			scope.AddLocalVariable("ghi", "ghi")
+			gotNinjaStrings, gotStrings, err := parseNinjaOrSimpleStrings(scope, tt.in)
+			if err != nil {
+				t.Errorf("unexpected error %s", err)
+			}
+
+			wantStrings := tt.outStrings
+			if tt.sameSlice {
+				wantStrings = tt.in
+			}
+
+			wantNinjaStrings := tt.outNinjaStrings
+
+			var evaluatedNinjaStrings []string
+			if gotNinjaStrings != nil {
+				evaluatedNinjaStrings = make([]string, 0, len(gotNinjaStrings))
+				for _, ns := range gotNinjaStrings {
+					evaluatedNinjaStrings = append(evaluatedNinjaStrings, ns.Value(nil))
+				}
+			}
+
+			if !reflect.DeepEqual(gotStrings, wantStrings) {
+				t.Errorf("incorrect strings output, want %q got %q", wantStrings, gotStrings)
+			}
+			if !reflect.DeepEqual(evaluatedNinjaStrings, wantNinjaStrings) {
+				t.Errorf("incorrect ninja strings output, want %q got %q", wantNinjaStrings, evaluatedNinjaStrings)
+			}
+			if len(inCopy) != len(tt.in) && (len(tt.in) == 0 || !reflect.DeepEqual(inCopy, tt.in)) {
+				t.Errorf("input modified, want %#v, got %#v", inCopy, tt.in)
+			}
+
+			if (unsafe.SliceData(tt.in) == unsafe.SliceData(gotStrings)) != tt.sameSlice {
+				if tt.sameSlice {
+					t.Errorf("expected input and output slices to have the same backing arrays")
+				} else {
+					t.Errorf("expected input and output slices to have different backing arrays")
+				}
+			}
+
+		})
 	}
 }
 
