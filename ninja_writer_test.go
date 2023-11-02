@@ -50,12 +50,15 @@ var ninjaWriterTestCases = []struct {
 	},
 	{
 		input: func(w *ninjaWriter) {
-			ck(w.Build("foo comment", "foo", testNinjaStrings("o1", "o2"),
-				testNinjaStrings("io1", "io2"), testNinjaStrings("e1", "e2"),
-				testNinjaStrings("i1", "i2"), testNinjaStrings("oo1", "oo2"),
-				testNinjaStrings("v1", "v2"), nil))
+			ck(w.Build("foo comment", "foo", testNinjaStrings("o3", "o4"),
+				testNinjaStrings("io3", "io4"), testNinjaStrings("e3", "e4"),
+				testNinjaStrings("i3", "i4"), testNinjaStrings("oo3", "oo4"),
+				testNinjaStrings("v3", "v4"), []string{"o1", "o2"},
+				[]string{"io1", "io2"}, []string{"e1", "e2"},
+				[]string{"i1", "i2"}, []string{"oo1", "oo2"},
+				[]string{"v1", "v2"}, nil))
 		},
-		output: "# foo comment\nbuild o1 o2 | io1 io2: foo e1 e2 | i1 i2 || oo1 oo2 |@ v1 v2\n",
+		output: "# foo comment\nbuild o1 o2 o3 o4 | io1 io2 io3 io4: foo e1 e2 e3 e4 | i1 i2 i3 i4 || oo1 oo2 $\n        oo3 oo4 |@ v1 v2 v3 v4\n",
 	},
 	{
 		input: func(w *ninjaWriter) {
@@ -63,15 +66,15 @@ var ninjaWriterTestCases = []struct {
 				testNinjaStrings(strings.Repeat("o", lineWidth)),
 				nil,
 				testNinjaStrings(strings.Repeat("i", lineWidth)),
-				nil, nil, nil, nil))
+				nil, nil, nil, nil, nil, nil, nil, nil, nil, nil))
 		},
-		output: "# foo comment\nbuild $\n        " + strings.Repeat("o", lineWidth) + ": foo $\n        " + strings.Repeat("i", lineWidth) + "\n",
+		output: "# foo comment\nbuild $\n        " + strings.Repeat("o", lineWidth) + ": $\n        foo $\n        " + strings.Repeat("i", lineWidth) + "\n",
 	},
 	{
 		input: func(w *ninjaWriter) {
-			ck(w.Default(nil, testNinjaStrings("foo")...))
+			ck(w.Default(nil, testNinjaStrings("foo"), []string{"bar"}))
 		},
-		output: "default foo\n",
+		output: "default bar foo\n",
 	},
 	{
 		input: func(w *ninjaWriter) {
@@ -108,7 +111,8 @@ var ninjaWriterTestCases = []struct {
 			ck(w.ScopedAssign("pool", "p"))
 			ck(w.BlankLine())
 			ck(w.Build("r comment", "r", testNinjaStrings("foo.o"),
-				nil, testNinjaStrings("foo.in"), nil, nil, nil, nil))
+				nil, testNinjaStrings("foo.in"), nil, nil, nil, nil,
+				nil, nil, nil, nil, nil, nil))
 			ck(w.ScopedAssign("_arg", "arg value"))
 		},
 		output: `pool p

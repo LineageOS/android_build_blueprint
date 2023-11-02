@@ -87,16 +87,31 @@ func (ps *parseState) pushVariable(start, end int, v Variable) {
 type stateFunc func(*parseState, int, rune) (stateFunc, error)
 
 // parseNinjaString parses an unescaped ninja string (i.e. all $<something>
-// occurrences are expected to be variables or $$) and returns a list of the
-// variable names that the string references.
+// occurrences are expected to be variables or $$) and returns a *ninjaString
+// that contains the original string and a list of the referenced variables.
 func parseNinjaString(scope scope, str string) (*ninjaString, error) {
+	ninjaString, str, err := parseNinjaOrSimpleString(scope, str)
+	if err != nil {
+		return nil, err
+	}
+	if ninjaString != nil {
+		return ninjaString, nil
+	}
+	return simpleNinjaString(str), nil
+}
+
+// parseNinjaOrSimpleString parses an unescaped ninja string (i.e. all $<something>
+// occurrences are expected to be variables or $$) and returns either a *ninjaString
+// if the string contains ninja variable references, or the original string and nil
+// for the *ninjaString if it doesn't.
+func parseNinjaOrSimpleString(scope scope, str string) (*ninjaString, string, error) {
 	// naively pre-allocate slice by counting $ signs
 	n := strings.Count(str, "$")
 	if n == 0 {
 		if len(str) > 0 && str[0] == ' ' {
 			str = "$" + str
 		}
-		return simpleNinjaString(str), nil
+		return nil, str, nil
 	}
 	variableReferences := make([]variableReference, 0, n)
 	result := &ninjaString{
@@ -116,13 +131,13 @@ func parseNinjaString(scope scope, str string) (*ninjaString, error) {
 		r := rune(str[i])
 		state, err = state(parseState, i, r)
 		if err != nil {
-			return nil, fmt.Errorf("error parsing ninja string %q: %s", str, err)
+			return nil, "", fmt.Errorf("error parsing ninja string %q: %s", str, err)
 		}
 	}
 
 	_, err = state(parseState, len(parseState.str), eof)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	// All the '$' characters counted initially could have been "$$" escapes, leaving no
@@ -131,7 +146,7 @@ func parseNinjaString(scope scope, str string) (*ninjaString, error) {
 		result.variables = nil
 	}
 
-	return result, nil
+	return result, "", nil
 }
 
 func parseFirstRuneState(state *parseState, i int, r rune) (stateFunc, error) {
@@ -246,6 +261,8 @@ func parseBracketsState(state *parseState, i int, r rune) (stateFunc, error) {
 	}
 }
 
+// parseNinjaStrings converts a list of strings to *ninjaStrings by finding the references
+// to ninja variables contained in the strings.
 func parseNinjaStrings(scope scope, strs []string) ([]*ninjaString,
 	error) {
 
@@ -261,6 +278,50 @@ func parseNinjaStrings(scope scope, strs []string) ([]*ninjaString,
 		result[i] = ninjaStr
 	}
 	return result, nil
+}
+
+// parseNinjaOrSimpleStrings splits a list of strings into *ninjaStrings if they have ninja
+// variable references or a list of strings if they don't.  If none of the input strings contain
+// ninja variable references (a very common case) then it returns the unmodified input slice as
+// the output slice.
+func parseNinjaOrSimpleStrings(scope scope, strs []string) ([]*ninjaString, []string, error) {
+	if len(strs) == 0 {
+		return nil, strs, nil
+	}
+
+	// allSimpleStrings is true until the first time a string with ninja variable references is found.
+	allSimpleStrings := true
+	var simpleStrings []string
+	var ninjaStrings []*ninjaString
+
+	for i, str := range strs {
+		ninjaStr, simpleStr, err := parseNinjaOrSimpleString(scope, str)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error parsing element %d: %s", i, err)
+		} else if ninjaStr != nil {
+			ninjaStrings = append(ninjaStrings, ninjaStr)
+			if allSimpleStrings && i > 0 {
+				// If all previous strings had no ninja variable references then they weren't copied into
+				// simpleStrings to avoid allocating it if the input slice is reused as the output.  Allocate
+				// simpleStrings and copy all the previous strings into it.
+				simpleStrings = make([]string, i, len(strs))
+				copy(simpleStrings, strs[:i])
+			}
+			allSimpleStrings = false
+		} else {
+			if !allSimpleStrings {
+				// Only copy into the output slice if at least one string with ninja variable references
+				// was found.  Skipped strings will be copied the first time a string with ninja variable
+				// is found.
+				simpleStrings = append(simpleStrings, simpleStr)
+			}
+		}
+	}
+	if allSimpleStrings {
+		// None of the input strings had ninja variable references, return the input slice as the output.
+		return nil, strs, nil
+	}
+	return ninjaStrings, simpleStrings, nil
 }
 
 func (n *ninjaString) Value(pkgNames map[*packageContext]string) string {
