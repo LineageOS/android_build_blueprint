@@ -16,7 +16,9 @@ package proptools
 
 import (
 	"os/exec"
+	"reflect"
 	"testing"
+	"unsafe"
 )
 
 type escapeTestCase struct {
@@ -165,5 +167,96 @@ func TestExternalShellEscapeIncludingSpaces(t *testing.T) {
 		if string(got) != testCase.in {
 			t.Errorf("%s: expected `%s` got `%s`", testCase.name, testCase.in, got)
 		}
+	}
+}
+
+func TestNinjaEscapeList(t *testing.T) {
+	type testCase struct {
+		name                 string
+		in                   []string
+		ninjaEscaped         []string
+		shellEscaped         []string
+		ninjaAndShellEscaped []string
+		sameSlice            bool
+	}
+	testCases := []testCase{
+		{
+			name:      "empty",
+			in:        []string{},
+			sameSlice: true,
+		},
+		{
+			name:      "nil",
+			in:        nil,
+			sameSlice: true,
+		},
+		{
+			name:      "no escaping",
+			in:        []string{"abc", "def", "ghi"},
+			sameSlice: true,
+		},
+		{
+			name:                 "escape first",
+			in:                   []string{`$\abc`, "def", "ghi"},
+			ninjaEscaped:         []string{`$$\abc`, "def", "ghi"},
+			shellEscaped:         []string{`'$\abc'`, "def", "ghi"},
+			ninjaAndShellEscaped: []string{`'$$\abc'`, "def", "ghi"},
+		},
+		{
+			name:                 "escape middle",
+			in:                   []string{"abc", `$\def`, "ghi"},
+			ninjaEscaped:         []string{"abc", `$$\def`, "ghi"},
+			shellEscaped:         []string{"abc", `'$\def'`, "ghi"},
+			ninjaAndShellEscaped: []string{"abc", `'$$\def'`, "ghi"},
+		},
+		{
+			name:                 "escape last",
+			in:                   []string{"abc", "def", `$\ghi`},
+			ninjaEscaped:         []string{"abc", "def", `$$\ghi`},
+			shellEscaped:         []string{"abc", "def", `'$\ghi'`},
+			ninjaAndShellEscaped: []string{"abc", "def", `'$$\ghi'`},
+		},
+	}
+
+	testFuncs := []struct {
+		name     string
+		f        func([]string) []string
+		expected func(tt testCase) []string
+	}{
+		{name: "NinjaEscapeList", f: NinjaEscapeList, expected: func(tt testCase) []string { return tt.ninjaEscaped }},
+		{name: "ShellEscapeList", f: ShellEscapeList, expected: func(tt testCase) []string { return tt.shellEscaped }},
+		{name: "NinjaAndShellEscapeList", f: NinjaAndShellEscapeList, expected: func(tt testCase) []string { return tt.ninjaAndShellEscaped }},
+	}
+
+	for _, tf := range testFuncs {
+		t.Run(tf.name, func(t *testing.T) {
+			for _, tt := range testCases {
+				t.Run(tt.name, func(t *testing.T) {
+					inCopy := append([]string(nil), tt.in...)
+
+					got := tf.f(tt.in)
+
+					want := tf.expected(tt)
+					if tt.sameSlice {
+						want = tt.in
+					}
+
+					if !reflect.DeepEqual(got, want) {
+						t.Errorf("incorrect output, want %q got %q", want, got)
+					}
+					if len(inCopy) != len(tt.in) && (len(tt.in) == 0 || !reflect.DeepEqual(inCopy, tt.in)) {
+						t.Errorf("input modified, want %#v, got %#v", inCopy, tt.in)
+					}
+
+					if (unsafe.SliceData(tt.in) == unsafe.SliceData(got)) != tt.sameSlice {
+						if tt.sameSlice {
+							t.Errorf("expected input and output slices to have the same backing arrays")
+						} else {
+							t.Errorf("expected input and output slices to have different backing arrays")
+						}
+					}
+				})
+			}
+		})
 	}
 }
