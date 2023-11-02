@@ -14,26 +14,38 @@
 
 package proptools
 
-import "strings"
+import (
+	"strings"
+	"unsafe"
+)
 
 // NinjaEscapeList takes a slice of strings that may contain characters that are meaningful to ninja
 // ($), and escapes each string so they will be passed to bash.  It is not necessary on input,
 // output, or dependency names, those are handled by ModuleContext.Build.  It is generally required
-// on strings from properties in Blueprint files that are used as Args to ModuleContext.Build.  A
-// new slice containing the escaped strings is returned.
+// on strings from properties in Blueprint files that are used as Args to ModuleContext.Build.  If
+// escaping modified any of the strings then a new slice containing the escaped strings is returned,
+// otherwise the original slice is returned.
 func NinjaEscapeList(slice []string) []string {
-	slice = append([]string(nil), slice...)
+	sliceCopied := false
 	for i, s := range slice {
-		slice[i] = NinjaEscape(s)
+		escaped := NinjaEscape(s)
+		if unsafe.StringData(s) != unsafe.StringData(escaped) {
+			if !sliceCopied {
+				// If this was the first string that was modified by escaping then make a copy of the
+				// input slice to use as the output slice.
+				slice = append([]string(nil), slice...)
+				sliceCopied = true
+			}
+			slice[i] = escaped
+		}
 	}
 	return slice
 }
 
-// NinjaEscapeList takes a string that may contain characters that are meaningful to ninja
+// NinjaEscape takes a string that may contain characters that are meaningful to ninja
 // ($), and escapes it so it will be passed to bash.  It is not necessary on input,
 // output, or dependency names, those are handled by ModuleContext.Build.  It is generally required
-// on strings from properties in Blueprint files that are used as Args to ModuleContext.Build.  A
-// new slice containing the escaped strings is returned.
+// on strings from properties in Blueprint files that are used as Args to ModuleContext.Build.
 func NinjaEscape(s string) string {
 	return ninjaEscaper.Replace(s)
 }
@@ -43,23 +55,39 @@ var ninjaEscaper = strings.NewReplacer(
 
 // ShellEscapeList takes a slice of strings that may contain characters that are meaningful to bash and
 // escapes them if necessary by wrapping them in single quotes, and replacing internal single quotes with
-// '\'' (one single quote to end the quoting, a shell-escaped single quote to insert a real single
-// quote, and then a single quote to restarting quoting.  A new slice containing the escaped strings
-// is returned.
+// one single quote to end the quoting, a shell-escaped single quote to insert a real single
+// quote, and then a single quote to restarting quoting.  If escaping modified any of the strings then a
+// new slice containing the escaped strings is returned, otherwise the original slice is returned.
 func ShellEscapeList(slice []string) []string {
-	slice = append([]string(nil), slice...)
-
+	sliceCopied := false
 	for i, s := range slice {
-		slice[i] = ShellEscape(s)
+		escaped := ShellEscape(s)
+		if unsafe.StringData(s) != unsafe.StringData(escaped) {
+			if !sliceCopied {
+				// If this was the first string that was modified by escaping then make a copy of the
+				// input slice to use as the output slice.
+				slice = append([]string(nil), slice...)
+				sliceCopied = true
+			}
+			slice[i] = escaped
+		}
 	}
 	return slice
 }
 
 func ShellEscapeListIncludingSpaces(slice []string) []string {
-	slice = append([]string(nil), slice...)
-
+	sliceCopied := false
 	for i, s := range slice {
-		slice[i] = ShellEscapeIncludingSpaces(s)
+		escaped := ShellEscapeIncludingSpaces(s)
+		if unsafe.StringData(s) != unsafe.StringData(escaped) {
+			if !sliceCopied {
+				// If this was the first string that was modified by escaping then make a copy of the
+				// input slice to use as the output slice.
+				slice = append([]string(nil), slice...)
+				sliceCopied = true
+			}
+			slice[i] = escaped
+		}
 	}
 	return slice
 }
@@ -84,7 +112,7 @@ func shellUnsafeChar(r rune) bool {
 
 // ShellEscape takes string that may contain characters that are meaningful to bash and
 // escapes it if necessary by wrapping it in single quotes, and replacing internal single quotes with
-// '\'' (one single quote to end the quoting, a shell-escaped single quote to insert a real single
+// one single quote to end the quoting, a shell-escaped single quote to insert a real single
 // quote, and then a single quote to restarting quoting.
 func ShellEscape(s string) string {
 	shellUnsafeCharNotSpace := func(r rune) bool {
