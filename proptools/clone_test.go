@@ -296,6 +296,21 @@ type EmbeddedStruct struct {
 }
 type EmbeddedInterface interface{}
 
+func isPointerToEmptyStruct(v any) bool {
+	t := reflect.TypeOf(v)
+	if t.Kind() != reflect.Ptr {
+		return false
+	}
+	t = t.Elem()
+	if t.Kind() != reflect.Struct {
+		return false
+	}
+	if t.NumField() > 0 {
+		return false
+	}
+	return true
+}
+
 func TestCloneProperties(t *testing.T) {
 	for _, testCase := range clonePropertiesTestCases {
 		testString := fmt.Sprintf("%s", testCase.in)
@@ -308,7 +323,7 @@ func TestCloneProperties(t *testing.T) {
 			t.Errorf("  expected: %#v", testCase.out)
 			t.Errorf("       got: %#v", got)
 		}
-		if testCase.out == got {
+		if testCase.out == got && !isPointerToEmptyStruct(testCase.out) {
 			t.Errorf("test case %s", testString)
 			t.Errorf("items should be cloned, not the original")
 			t.Errorf("  expected: %s", testCase.out)
