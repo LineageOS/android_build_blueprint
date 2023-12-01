@@ -338,6 +338,7 @@ func (g *goPackage) GenerateBuildActions(ctx blueprint.ModuleContext) {
 
 	buildGoPackage(ctx, g.pkgRoot, g.properties.PkgPath, g.archiveFile,
 		srcs, genSrcs)
+	ctx.SetProvider(blueprint.SrcsFileProviderKey, blueprint.SrcsFileProviderData{SrcPaths: srcs})
 }
 
 // A goBinary is a module for building executable binaries from Go sources.
@@ -466,6 +467,7 @@ func (g *goBinary) GenerateBuildActions(ctx blueprint.ModuleContext) {
 		Validations: testDeps,
 		Optional:    !g.properties.Default,
 	})
+	ctx.SetProvider(blueprint.SrcsFileProviderKey, blueprint.SrcsFileProviderData{SrcPaths: srcs})
 }
 
 func buildGoPluginLoader(ctx blueprint.ModuleContext, pkgPath, pluginSrc string) bool {
