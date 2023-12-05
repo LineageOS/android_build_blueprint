@@ -53,6 +53,12 @@ func FieldNameForProperty(propertyName string) string {
 	return fieldName
 }
 
+// Clear takes a pointer to a field and clears the value pointed to by the pointer with zero value.
+func Clear[T any](ptr *T) {
+	var zeroValue T
+	*ptr = zeroValue
+}
+
 // BoolPtr returns a pointer to a new bool containing the given value.
 func BoolPtr(b bool) *bool {
 	return &b
