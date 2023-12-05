@@ -14,7 +14,9 @@
 
 package proptools
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestPropertyNameForField(t *testing.T) {
 	tests := []struct {
@@ -110,5 +112,47 @@ func TestFieldNameForProperty(t *testing.T) {
 				t.Errorf("FieldNameForProperty(%v) = %v, want %v", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestClearField(t *testing.T) {
+	props := struct {
+		i  int
+		s  string
+		ps *string
+		ss []string
+		c  struct {
+			n int
+		}
+	}{}
+
+	props.i = 42
+	Clear(&props.i)
+	if props.i != 0 {
+		t.Error("int field is not cleared to zero.")
+	}
+
+	props.s = "foo"
+	Clear(&props.s)
+	if props.s != "" {
+		t.Error("string field is not cleared to zero.")
+	}
+
+	props.ps = StringPtr("foo")
+	Clear(&props.ps)
+	if props.ps != nil {
+		t.Error("string pointer field is not cleared to zero.")
+	}
+
+	props.ss = []string{"foo"}
+	Clear(&props.ss)
+	if props.ss != nil {
+		t.Error("string array field is not cleared to zero.")
+	}
+
+	props.c.n = 42
+	Clear(&props.c)
+	if props.c.n != 0 {
+		t.Error("struct field is not cleared to zero.")
 	}
 }
