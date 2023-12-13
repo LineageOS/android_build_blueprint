@@ -4,4 +4,4 @@ type SrcsFileProviderData struct {
 	SrcPaths []string
 }
 
-var SrcsFileProviderKey = NewProvider(SrcsFileProviderData{})
+var SrcsFileProviderKey = NewProvider[SrcsFileProviderData]()
