@@ -46,31 +46,35 @@ type providerTestGenerateBuildActionsInfo struct {
 
 type providerTestUnsetInfo string
 
-var providerTestMutatorInfoProvider = NewMutatorProvider(&providerTestMutatorInfo{}, "provider_mutator")
-var providerTestGenerateBuildActionsInfoProvider = NewProvider(&providerTestGenerateBuildActionsInfo{})
-var providerTestUnsetInfoProvider = NewMutatorProvider((providerTestUnsetInfo)(""), "provider_mutator")
-var providerTestUnusedMutatorProvider = NewMutatorProvider(&struct{ unused string }{}, "nonexistent_mutator")
+var providerTestMutatorInfoProvider = NewMutatorProvider[*providerTestMutatorInfo]("provider_mutator")
+var providerTestGenerateBuildActionsInfoProvider = NewProvider[*providerTestGenerateBuildActionsInfo]()
+var providerTestUnsetInfoProvider = NewMutatorProvider[providerTestUnsetInfo]("provider_mutator")
+var providerTestUnusedMutatorProvider = NewMutatorProvider[*struct{ unused string }]("nonexistent_mutator")
 
 func (p *providerTestModule) GenerateBuildActions(ctx ModuleContext) {
-	unset := ctx.Provider(providerTestUnsetInfoProvider).(providerTestUnsetInfo)
+	unset, ok := ModuleProvider(ctx, providerTestUnsetInfoProvider)
+	if ok {
+		panic(fmt.Errorf("expected false return value for providerTestGenerateBuildActionsInfoProvider before it was set"))
+	}
 	if unset != "" {
-		panic(fmt.Sprintf("expected zero value for providerTestGenerateBuildActionsInfoProvider before it was set, got %q",
+		panic(fmt.Errorf("expected zero value for providerTestGenerateBuildActionsInfoProvider before it was set, got %q",
 			unset))
 	}
 
-	_ = ctx.Provider(providerTestUnusedMutatorProvider)
+	// Verify reading providerTestUnusedMutatorProvider doesn't panic
+	_, _ = ModuleProvider(ctx, providerTestUnusedMutatorProvider)
 
-	ctx.SetProvider(providerTestGenerateBuildActionsInfoProvider, &providerTestGenerateBuildActionsInfo{
+	SetProvider(ctx, providerTestGenerateBuildActionsInfoProvider, &providerTestGenerateBuildActionsInfo{
 		Value: ctx.ModuleName(),
 	})
 
-	mp := ctx.Provider(providerTestMutatorInfoProvider).(*providerTestMutatorInfo)
-	if mp != nil {
+	mp, ok := ModuleProvider(ctx, providerTestMutatorInfoProvider)
+	if ok {
 		p.mutatorProviderValues = mp.Values
 	}
 
 	ctx.VisitDirectDeps(func(module Module) {
-		gbap := ctx.OtherModuleProvider(module, providerTestGenerateBuildActionsInfoProvider).(*providerTestGenerateBuildActionsInfo)
+		gbap, _ := OtherModuleProvider(ctx, module, providerTestGenerateBuildActionsInfoProvider)
 		if gbap != nil {
 			p.generateBuildActionsProviderValues = append(p.generateBuildActionsProviderValues, gbap.Value)
 		}
@@ -87,19 +91,20 @@ func providerTestMutator(ctx BottomUpMutatorContext) {
 	values := []string{strings.ToLower(ctx.ModuleName())}
 
 	ctx.VisitDirectDeps(func(module Module) {
-		mp := ctx.OtherModuleProvider(module, providerTestMutatorInfoProvider).(*providerTestMutatorInfo)
+		mp, _ := OtherModuleProvider(ctx, module, providerTestMutatorInfoProvider)
 		if mp != nil {
 			values = append(values, mp.Values...)
 		}
 	})
 
-	ctx.SetProvider(providerTestMutatorInfoProvider, &providerTestMutatorInfo{
+	SetProvider(ctx, providerTestMutatorInfoProvider, &providerTestMutatorInfo{
 		Values: values,
 	})
 }
 
 func providerTestAfterMutator(ctx BottomUpMutatorContext) {
-	_ = ctx.Provider(providerTestMutatorInfoProvider)
+	// Verify reading providerTestUnusedMutatorProvider doesn't panic
+	_, _ = ModuleProvider(ctx, providerTestMutatorInfoProvider)
 }
 
 func TestProviders(t *testing.T) {
@@ -167,8 +172,8 @@ func TestProviders(t *testing.T) {
 type invalidProviderUsageMutatorInfo string
 type invalidProviderUsageGenerateBuildActionsInfo string
 
-var invalidProviderUsageMutatorInfoProvider = NewMutatorProvider(invalidProviderUsageMutatorInfo(""), "mutator_under_test")
-var invalidProviderUsageGenerateBuildActionsInfoProvider = NewProvider(invalidProviderUsageGenerateBuildActionsInfo(""))
+var invalidProviderUsageMutatorInfoProvider = NewMutatorProvider[invalidProviderUsageMutatorInfo]("mutator_under_test")
+var invalidProviderUsageGenerateBuildActionsInfoProvider = NewProvider[invalidProviderUsageGenerateBuildActionsInfo]()
 
 type invalidProviderUsageTestModule struct {
 	parent *invalidProviderUsageTestModule
@@ -209,11 +214,11 @@ func invalidProviderUsageBeforeMutator(ctx BottomUpMutatorContext) {
 	if i, ok := ctx.Module().(*invalidProviderUsageTestModule); ok {
 		if i.properties.Early_mutator_set_of_mutator_provider {
 			// A mutator attempting to set the value of a provider associated with a later mutator.
-			ctx.SetProvider(invalidProviderUsageMutatorInfoProvider, invalidProviderUsageMutatorInfo(""))
+			SetProvider(ctx, invalidProviderUsageMutatorInfoProvider, invalidProviderUsageMutatorInfo(""))
 		}
 		if i.properties.Early_mutator_get_of_mutator_provider {
 			// A mutator attempting to get the value of a provider associated with a later mutator.
-			_ = ctx.Provider(invalidProviderUsageMutatorInfoProvider)
+			_, _ = ModuleProvider(ctx, invalidProviderUsageMutatorInfoProvider)
 		}
 	}
 }
@@ -222,18 +227,18 @@ func invalidProviderUsageMutatorUnderTest(ctx TopDownMutatorContext) {
 	if i, ok := ctx.Module().(*invalidProviderUsageTestModule); ok {
 		if i.properties.Early_mutator_set_of_build_actions_provider {
 			// A mutator attempting to set the value of a non-mutator provider.
-			ctx.SetProvider(invalidProviderUsageGenerateBuildActionsInfoProvider, invalidProviderUsageGenerateBuildActionsInfo(""))
+			SetProvider(ctx, invalidProviderUsageGenerateBuildActionsInfoProvider, invalidProviderUsageGenerateBuildActionsInfo(""))
 		}
 		if i.properties.Early_mutator_get_of_build_actions_provider {
 			// A mutator attempting to get the value of a non-mutator provider.
-			_ = ctx.Provider(invalidProviderUsageGenerateBuildActionsInfoProvider)
+			_, _ = ModuleProvider(ctx, invalidProviderUsageGenerateBuildActionsInfoProvider)
 		}
 		if i.properties.Early_module_get_of_mutator_provider {
 			// A mutator attempting to get the value of a provider associated with this mutator on
 			// a module for which this mutator hasn't run.  This is a top down mutator so
 			// dependencies haven't run yet.
 			ctx.VisitDirectDeps(func(module Module) {
-				_ = ctx.OtherModuleProvider(module, invalidProviderUsageMutatorInfoProvider)
+				_, _ = OtherModuleProvider(ctx, module, invalidProviderUsageMutatorInfoProvider)
 			})
 		}
 	}
@@ -243,11 +248,11 @@ func invalidProviderUsageAfterMutator(ctx BottomUpMutatorContext) {
 	if i, ok := ctx.Module().(*invalidProviderUsageTestModule); ok {
 		if i.properties.Late_mutator_set_of_mutator_provider {
 			// A mutator trying to set the value of a provider associated with an earlier mutator.
-			ctx.SetProvider(invalidProviderUsageMutatorInfoProvider, invalidProviderUsageMutatorInfo(""))
+			SetProvider(ctx, invalidProviderUsageMutatorInfoProvider, invalidProviderUsageMutatorInfo(""))
 		}
 		if i.properties.Late_mutator_set_of_mutator_provider {
 			// A mutator trying to set the value of a provider associated with an earlier mutator.
-			ctx.SetProvider(invalidProviderUsageMutatorInfoProvider, invalidProviderUsageMutatorInfo(""))
+			SetProvider(ctx, invalidProviderUsageMutatorInfoProvider, invalidProviderUsageMutatorInfo(""))
 		}
 	}
 }
@@ -255,16 +260,16 @@ func invalidProviderUsageAfterMutator(ctx BottomUpMutatorContext) {
 func (i *invalidProviderUsageTestModule) GenerateBuildActions(ctx ModuleContext) {
 	if i.properties.Late_build_actions_set_of_mutator_provider {
 		// A GenerateBuildActions trying to set the value of a provider associated with a mutator.
-		ctx.SetProvider(invalidProviderUsageMutatorInfoProvider, invalidProviderUsageMutatorInfo(""))
+		SetProvider(ctx, invalidProviderUsageMutatorInfoProvider, invalidProviderUsageMutatorInfo(""))
 	}
 	if i.properties.Early_module_get_of_build_actions_provider {
 		// A GenerateBuildActions trying to get the value of a provider on a module for which
 		// GenerateBuildActions hasn't run.
-		_ = ctx.OtherModuleProvider(i.parent, invalidProviderUsageGenerateBuildActionsInfoProvider)
+		_, _ = OtherModuleProvider(ctx, i.parent, invalidProviderUsageGenerateBuildActionsInfoProvider)
 	}
 	if i.properties.Duplicate_set {
-		ctx.SetProvider(invalidProviderUsageGenerateBuildActionsInfoProvider, invalidProviderUsageGenerateBuildActionsInfo(""))
-		ctx.SetProvider(invalidProviderUsageGenerateBuildActionsInfoProvider, invalidProviderUsageGenerateBuildActionsInfo(""))
+		SetProvider(ctx, invalidProviderUsageGenerateBuildActionsInfoProvider, invalidProviderUsageGenerateBuildActionsInfo(""))
+		SetProvider(ctx, invalidProviderUsageGenerateBuildActionsInfoProvider, invalidProviderUsageGenerateBuildActionsInfo(""))
 	}
 }
 

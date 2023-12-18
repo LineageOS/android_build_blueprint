@@ -52,10 +52,7 @@ type SingletonContext interface {
 	// return value can always be type-asserted to the type of the provider.  The return value should
 	// always be considered read-only.  It panics if called before the appropriate mutator or
 	// GenerateBuildActions pass for the provider on the module.
-	ModuleProvider(module Module, provider ProviderKey) interface{}
-
-	// ModuleHasProvider returns true if the provider for the given module has been set.
-	ModuleHasProvider(m Module, provider ProviderKey) bool
+	ModuleProvider(module Module, provider AnyProviderKey) (any, bool)
 
 	// ModuleErrorf reports an error at the line number of the module type in the module definition.
 	ModuleErrorf(module Module, format string, args ...interface{})
@@ -202,13 +199,8 @@ func (s *singletonContext) ModuleType(logicModule Module) string {
 	return s.context.ModuleType(logicModule)
 }
 
-func (s *singletonContext) ModuleProvider(logicModule Module, provider ProviderKey) interface{} {
+func (s *singletonContext) ModuleProvider(logicModule Module, provider AnyProviderKey) (any, bool) {
 	return s.context.ModuleProvider(logicModule, provider)
-}
-
-// ModuleHasProvider returns true if the provider for the given module has been set.
-func (s *singletonContext) ModuleHasProvider(logicModule Module, provider ProviderKey) bool {
-	return s.context.ModuleHasProvider(logicModule, provider)
 }
 
 func (s *singletonContext) BlueprintFile(logicModule Module) string {
