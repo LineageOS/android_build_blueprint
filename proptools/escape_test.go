@@ -15,6 +15,7 @@
 package proptools
 
 import (
+	"bytes"
 	"os/exec"
 	"reflect"
 	"testing"
@@ -143,8 +144,9 @@ func TestExternalShellEscaping(t *testing.T) {
 		return
 	}
 	for _, testCase := range shellEscapeTestCase {
-		cmd := "echo -n " + ShellEscape(testCase.in)
+		cmd := "echo " + ShellEscape(testCase.in)
 		got, err := exec.Command("/bin/sh", "-c", cmd).Output()
+		got = bytes.TrimSuffix(got, []byte("\n"))
 		if err != nil {
 			t.Error(err)
 		}
@@ -159,8 +161,9 @@ func TestExternalShellEscapeIncludingSpaces(t *testing.T) {
 		return
 	}
 	for _, testCase := range shellEscapeIncludingSpacesTestCase {
-		cmd := "echo -n " + ShellEscapeIncludingSpaces(testCase.in)
+		cmd := "echo " + ShellEscapeIncludingSpaces(testCase.in)
 		got, err := exec.Command("/bin/sh", "-c", cmd).Output()
+		got = bytes.TrimSuffix(got, []byte("\n"))
 		if err != nil {
 			t.Error(err)
 		}
