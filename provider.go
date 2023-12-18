@@ -16,7 +16,6 @@ package blueprint
 
 import (
 	"fmt"
-	"reflect"
 )
 
 // This file implements Providers, modelled after Bazel
@@ -28,8 +27,8 @@ import (
 // module, and the value can only be retrieved after GenerateBuildActions for the module.
 //
 // Providers are globally registered during init() and given a unique ID.  The value of a provider
-// for a module is stored in an []interface{} indexed by the ID.  If the value of a provider has
-// not been set, the value in the []interface{} will be nil.
+// for a module is stored in an []any indexed by the ID.  If the value of a provider has
+// not been set, the value in the []any will be nil.
 //
 // If the storage used by the provider value arrays becomes too large:
 //  sizeof([]interface) * number of providers * number of modules that have a provider value set
@@ -42,54 +41,64 @@ import (
 // necessary for the getters and setters to make deep copies of the values, likely extending
 // proptools.CloneProperties to do so.
 
-type provider struct {
+type typedProviderKey[K any] struct {
+	providerKey
+}
+
+type providerKey struct {
 	id      int
-	typ     reflect.Type
-	zero    interface{}
+	typ     string
+	zero    any
 	mutator string
 }
 
-type ProviderKey *provider
+func (p *providerKey) provider() *providerKey { return p }
 
-var providerRegistry []ProviderKey
+type AnyProviderKey interface {
+	provider() *providerKey
+}
+type ProviderKey[K any] struct {
+	*typedProviderKey[K]
+}
 
-// NewProvider returns a ProviderKey for the type of the given example value.  The example value
-// is otherwise unused.
+var _ AnyProviderKey = (*providerKey)(nil)
+var _ AnyProviderKey = ProviderKey[bool]{}
+
+var providerRegistry []*providerKey
+
+// NewProvider returns a ProviderKey for the given type.
 //
 // The returned ProviderKey can be used to set a value of the ProviderKey's type for a module
 // inside GenerateBuildActions for the module, and to get the value from GenerateBuildActions from
 // any module later in the build graph.
-//
-// Once Go has generics the exampleValue parameter will not be necessary:
-// NewProvider(type T)() ProviderKey(T)
-func NewProvider(exampleValue interface{}) ProviderKey {
-	return NewMutatorProvider(exampleValue, "")
+func NewProvider[K any]() ProviderKey[K] {
+	return NewMutatorProvider[K]("")
 }
 
-// NewMutatorProvider returns a ProviderKey for the type of the given example value.  The example
-// value is otherwise unused.
+// NewMutatorProvider returns a ProviderKey for the given type.
 //
 // The returned ProviderKey can be used to set a value of the ProviderKey's type for a module inside
 // the given mutator for the module, and to get the value from GenerateBuildActions from any
 // module later in the build graph in the same mutator, or any module in a later mutator or during
 // GenerateBuildActions.
-//
-// Once Go has generics the exampleValue parameter will not be necessary:
-// NewMutatorProvider(type T)(mutator string) ProviderKey(T)
-func NewMutatorProvider(exampleValue interface{}, mutator string) ProviderKey {
+func NewMutatorProvider[K any](mutator string) ProviderKey[K] {
 	checkCalledFromInit()
 
-	typ := reflect.TypeOf(exampleValue)
-	zero := reflect.Zero(typ).Interface()
+	zero := *new(K)
+	typ := fmt.Sprintf("%T", *new(K))
 
-	provider := &provider{
-		id:      len(providerRegistry),
-		typ:     typ,
-		zero:    zero,
-		mutator: mutator,
+	provider := ProviderKey[K]{
+		typedProviderKey: &typedProviderKey[K]{
+			providerKey: providerKey{
+				id:      len(providerRegistry),
+				typ:     typ,
+				zero:    zero,
+				mutator: mutator,
+			},
+		},
 	}
 
-	providerRegistry = append(providerRegistry, provider)
+	providerRegistry = append(providerRegistry, &provider.providerKey)
 
 	return provider
 }
@@ -113,7 +122,7 @@ func (c *Context) initProviders() {
 //
 // Once Go has generics the value parameter can be typed:
 // setProvider(type T)(m *moduleInfo, provider ProviderKey(T), value T)
-func (c *Context) setProvider(m *moduleInfo, provider ProviderKey, value interface{}) {
+func (c *Context) setProvider(m *moduleInfo, provider *providerKey, value any) {
 	if provider.mutator == "" {
 		if !m.startedGenerateBuildActions {
 			panic(fmt.Sprintf("Can't set value of provider %s before GenerateBuildActions started",
@@ -136,13 +145,8 @@ func (c *Context) setProvider(m *moduleInfo, provider ProviderKey, value interfa
 		}
 	}
 
-	if typ := reflect.TypeOf(value); typ != provider.typ {
-		panic(fmt.Sprintf("Value for provider has incorrect type, wanted %s, got %s",
-			provider.typ, typ))
-	}
-
 	if m.providers == nil {
-		m.providers = make([]interface{}, len(providerRegistry))
+		m.providers = make([]any, len(providerRegistry))
 	}
 
 	if m.providers[provider.id] != nil {
@@ -154,13 +158,11 @@ func (c *Context) setProvider(m *moduleInfo, provider ProviderKey, value interfa
 
 // provider returns the value, if any, for a given provider for a module.  Verifies that it is
 // called after the appropriate mutator or GenerateBuildActions pass for the provider on the module.
-// If the value for the provider was not set it returns the zero value of the type of the provider,
-// which means the return value can always be type-asserted to the type of the provider.  The return
-// value should always be considered read-only.
+// If the value for the provider was not set it returns nil.  The return value should always be considered read-only.
 //
 // Once Go has generics the return value can be typed and the type assert by callers can be dropped:
 // provider(type T)(m *moduleInfo, provider ProviderKey(T)) T
-func (c *Context) provider(m *moduleInfo, provider ProviderKey) (interface{}, bool) {
+func (c *Context) provider(m *moduleInfo, provider *providerKey) (any, bool) {
 	if provider.mutator == "" {
 		if !m.finishedGenerateBuildActions {
 			panic(fmt.Sprintf("Can't get value of provider %s before GenerateBuildActions finished",
@@ -180,7 +182,7 @@ func (c *Context) provider(m *moduleInfo, provider ProviderKey) (interface{}, bo
 		}
 	}
 
-	return provider.zero, false
+	return nil, false
 }
 
 func (c *Context) mutatorFinishedForModule(mutator *mutatorInfo, m *moduleInfo) bool {
@@ -213,4 +215,101 @@ func (c *Context) mutatorStartedForModule(mutator *mutatorInfo, m *moduleInfo) b
 	}
 
 	return false
+}
+
+// OtherModuleProviderContext is a helper interface that is a subset of ModuleContext, BottomUpMutatorContext, or
+// TopDownMutatorContext for use in OtherModuleProvider.
+type OtherModuleProviderContext interface {
+	OtherModuleProvider(m Module, provider AnyProviderKey) (any, bool)
+}
+
+var _ OtherModuleProviderContext = BaseModuleContext(nil)
+var _ OtherModuleProviderContext = ModuleContext(nil)
+var _ OtherModuleProviderContext = BottomUpMutatorContext(nil)
+var _ OtherModuleProviderContext = TopDownMutatorContext(nil)
+
+// OtherModuleProvider reads the provider for the given module.  If the provider has been set the value is
+// returned and the boolean is true.  If it has not been set the zero value of the provider's type  is returned
+// and the boolean is false.  The value returned may be a deep copy of the value originally passed to SetProvider.
+//
+// OtherModuleProviderContext is a helper interface that accepts ModuleContext, BottomUpMutatorContext, or
+// TopDownMutatorContext.
+func OtherModuleProvider[K any](ctx OtherModuleProviderContext, module Module, provider ProviderKey[K]) (K, bool) {
+	value, ok := ctx.OtherModuleProvider(module, provider)
+	if !ok {
+		var k K
+		return k, false
+	}
+	return value.(K), ok
+}
+
+// SingletonModuleProviderContext is a helper interface that is a subset of Context and SingletonContext for use in
+// SingletonModuleProvider.
+type SingletonModuleProviderContext interface {
+	ModuleProvider(m Module, provider AnyProviderKey) (any, bool)
+}
+
+var _ SingletonModuleProviderContext = &Context{}
+var _ SingletonModuleProviderContext = SingletonContext(nil)
+
+// SingletonModuleProvider reads the provider for the given module.  If the provider has been set the value is
+// returned and the boolean is true.  If it has not been set the zero value of the provider's type  is returned
+// and the boolean is false.  The value returned may be a deep copy of the value originally passed to SetProvider.
+//
+// SingletonModuleProviderContext is a helper interface that accepts Context or SingletonContext.
+func SingletonModuleProvider[K any](ctx SingletonModuleProviderContext, module Module, provider ProviderKey[K]) (K, bool) {
+	value, ok := ctx.ModuleProvider(module, provider)
+	if !ok {
+		var k K
+		return k, false
+	}
+	return value.(K), ok
+}
+
+// ModuleProviderContext is a helper interface that is a subset of ModuleContext, BottomUpMutatorContext, or
+// TopDownMutatorContext for use in ModuleProvider.
+type ModuleProviderContext interface {
+	Provider(provider AnyProviderKey) (any, bool)
+}
+
+var _ ModuleProviderContext = BaseModuleContext(nil)
+var _ ModuleProviderContext = ModuleContext(nil)
+var _ ModuleProviderContext = BottomUpMutatorContext(nil)
+var _ ModuleProviderContext = TopDownMutatorContext(nil)
+
+// ModuleProvider reads the provider for the current module.  If the provider has been set the value is
+// returned and the boolean is true.  If it has not been set the zero value of the provider's type  is returned
+// and the boolean is false.  The value returned may be a deep copy of the value originally passed to SetProvider.
+//
+// ModuleProviderContext is a helper interface that accepts ModuleContext, BottomUpMutatorContext, or
+// TopDownMutatorContext.
+func ModuleProvider[K any](ctx ModuleProviderContext, provider ProviderKey[K]) (K, bool) {
+	value, ok := ctx.Provider(provider)
+	if !ok {
+		var k K
+		return k, false
+	}
+	return value.(K), ok
+}
+
+// SetProviderContext is a helper interface that is a subset of ModuleContext, BottomUpMutatorContext, or
+// TopDownMutatorContext for use in SetProvider.
+type SetProviderContext interface {
+	SetProvider(provider AnyProviderKey, value any)
+}
+
+var _ SetProviderContext = BaseModuleContext(nil)
+var _ SetProviderContext = ModuleContext(nil)
+var _ SetProviderContext = BottomUpMutatorContext(nil)
+var _ SetProviderContext = TopDownMutatorContext(nil)
+
+// SetProvider sets the value for a provider for the current module.  It panics if not called
+// during the appropriate mutator or GenerateBuildActions pass for the provider, if the value
+// is not of the appropriate type, or if the value has already been set.  The value should not
+// be modified after being passed to SetProvider.
+//
+// SetProviderContext is a helper interface that accepts ModuleContext, BottomUpMutatorContext, or
+// TopDownMutatorContext.
+func SetProvider[K any](ctx SetProviderContext, provider ProviderKey[K], value K) {
+	ctx.SetProvider(provider, value)
 }
