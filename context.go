@@ -4041,17 +4041,13 @@ func (c *Context) ModuleType(logicModule Module) string {
 // always be considered read-only.  It panics if called before the appropriate mutator or
 // GenerateBuildActions pass for the provider on the module.  The value returned may be a deep
 // copy of the value originally passed to SetProvider.
-func (c *Context) ModuleProvider(logicModule Module, provider ProviderKey) interface{} {
+func (c *Context) ModuleProvider(logicModule Module, provider AnyProviderKey) (any, bool) {
 	module := c.moduleInfo[logicModule]
-	value, _ := c.provider(module, provider)
-	return value
-}
-
-// ModuleHasProvider returns true if the provider for the given module has been set.
-func (c *Context) ModuleHasProvider(logicModule Module, provider ProviderKey) bool {
-	module := c.moduleInfo[logicModule]
-	_, ok := c.provider(module, provider)
-	return ok
+	value, ok := c.provider(module, provider.provider())
+	if value == nil {
+		value = provider.provider().zero
+	}
+	return value, ok
 }
 
 func (c *Context) BlueprintFile(logicModule Module) string {
