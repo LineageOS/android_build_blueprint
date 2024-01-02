@@ -48,7 +48,6 @@ type typedProviderKey[K any] struct {
 type providerKey struct {
 	id      int
 	typ     string
-	zero    any
 	mutator string
 }
 
@@ -84,7 +83,6 @@ func NewProvider[K any]() ProviderKey[K] {
 func NewMutatorProvider[K any](mutator string) ProviderKey[K] {
 	checkCalledFromInit()
 
-	zero := *new(K)
 	typ := fmt.Sprintf("%T", *new(K))
 
 	provider := ProviderKey[K]{
@@ -92,7 +90,6 @@ func NewMutatorProvider[K any](mutator string) ProviderKey[K] {
 			providerKey: providerKey{
 				id:      len(providerRegistry),
 				typ:     typ,
-				zero:    zero,
 				mutator: mutator,
 			},
 		},
