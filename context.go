@@ -4036,18 +4036,12 @@ func (c *Context) ModuleType(logicModule Module) string {
 }
 
 // ModuleProvider returns the value, if any, for the provider for a module.  If the value for the
-// provider was not set it returns the zero value of the type of the provider, which means the
-// return value can always be type-asserted to the type of the provider.  The return value should
-// always be considered read-only.  It panics if called before the appropriate mutator or
-// GenerateBuildActions pass for the provider on the module.  The value returned may be a deep
-// copy of the value originally passed to SetProvider.
+// provider was not set it returns nil and false.  The return value should always be considered read-only.
+// It panics if called before the appropriate mutator or GenerateBuildActions pass for the provider on the
+// module.  The value returned may be a deep copy of the value originally passed to SetProvider.
 func (c *Context) ModuleProvider(logicModule Module, provider AnyProviderKey) (any, bool) {
 	module := c.moduleInfo[logicModule]
-	value, ok := c.provider(module, provider.provider())
-	if value == nil {
-		value = provider.provider().zero
-	}
-	return value, ok
+	return c.provider(module, provider.provider())
 }
 
 func (c *Context) BlueprintFile(logicModule Module) string {
