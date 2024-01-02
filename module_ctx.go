@@ -334,16 +334,14 @@ type BaseModuleContext interface {
 	OtherModuleReverseDependencyVariantExists(name string) bool
 
 	// OtherModuleProvider returns the value for a provider for the given module.  If the value is
-	// not set it returns the zero value of the type of the provider, so the return value can always
-	// be type asserted to the type of the provider.  The value returned may be a deep copy of the
-	// value originally passed to SetProvider.
+	// not set it returns nil and false.  The value returned may be a deep copy of the value originally
+	// passed to SetProvider.
 	//
 	// This method shouldn't be used directly, prefer the type-safe android.OtherModuleProvider instead.
 	OtherModuleProvider(m Module, provider AnyProviderKey) (any, bool)
 
 	// Provider returns the value for a provider for the current module.  If the value is
-	// not set it returns the zero value of the type of the provider, so the return value can always
-	// be type asserted to the type of the provider.  It panics if called before the appropriate
+	// not set it returns nil and false.  It panics if called before the appropriate
 	// mutator or GenerateBuildActions pass for the provider.  The value returned may be a deep
 	// copy of the value originally passed to SetProvider.
 	//
@@ -611,24 +609,11 @@ func (m *baseModuleContext) OtherModuleReverseDependencyVariantExists(name strin
 
 func (m *baseModuleContext) OtherModuleProvider(logicModule Module, provider AnyProviderKey) (any, bool) {
 	module := m.context.moduleInfo[logicModule]
-	value, ok := m.context.provider(module, provider.provider())
-	if value == nil {
-		value = provider.provider().zero
-	}
-	return value, ok
+	return m.context.provider(module, provider.provider())
 }
 
 func (m *baseModuleContext) Provider(provider AnyProviderKey) (any, bool) {
-	value, ok := m.context.provider(m.module, provider.provider())
-	if value == nil {
-		value = provider.provider().zero
-	}
-	return value, ok
-}
-
-func (m *baseModuleContext) HasProvider(provider AnyProviderKey) bool {
-	_, ok := m.context.provider(m.module, provider.provider())
-	return ok
+	return m.context.provider(m.module, provider.provider())
 }
 
 func (m *baseModuleContext) SetProvider(provider AnyProviderKey, value interface{}) {
