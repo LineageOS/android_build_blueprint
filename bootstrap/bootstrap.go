@@ -760,6 +760,7 @@ func (s *singleton) GenerateBuildActions(ctx blueprint.SingletonContext) {
 			Rule:      generateBuildNinja,
 			Outputs:   i.Outputs,
 			Inputs:    i.Inputs,
+			Implicits: i.Implicits,
 			OrderOnly: i.OrderOnlyInputs,
 			Args: map[string]string{
 				"builder": primaryBuilderFile,
