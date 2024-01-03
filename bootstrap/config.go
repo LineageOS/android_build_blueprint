@@ -106,6 +106,7 @@ const (
 
 type PrimaryBuilderInvocation struct {
 	Inputs          []string
+	Implicits       []string
 	OrderOnlyInputs []string
 	Outputs         []string
 	Args            []string
