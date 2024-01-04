@@ -108,6 +108,7 @@ func UnpackProperties(properties []*parser.Property, objects ...interface{}) (ma
 
 func (ctx *unpackContext) reportUnusedNames(unusedNames []string) []error {
 	sort.Strings(unusedNames)
+	unusedNames = removeUnnecessaryUnusedNames(unusedNames)
 	var lastReported string
 	for _, name := range unusedNames {
 		// if 'foo' has been reported, ignore 'foo\..*' and 'foo\[.*'
@@ -123,6 +124,23 @@ func (ctx *unpackContext) reportUnusedNames(unusedNames []string) []error {
 		lastReported = name
 	}
 	return ctx.errs
+}
+
+// When property a.b.c is not used, (also there is no a.* or a.b.* used)
+// "a", "a.b" and "a.b.c" are all in unusedNames.
+// removeUnnecessaryUnusedNames only keeps the last "a.b.c" as the real unused
+// name.
+func removeUnnecessaryUnusedNames(names []string) []string {
+	if len(names) == 0 {
+		return names
+	}
+	var simplifiedNames []string
+	for index, name := range names {
+		if index == len(names)-1 || !strings.HasPrefix(names[index+1], name) {
+			simplifiedNames = append(simplifiedNames, name)
+		}
+	}
+	return simplifiedNames
 }
 
 func (ctx *unpackContext) buildPropertyMap(prefix string, properties []*parser.Property) bool {
