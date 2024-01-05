@@ -17,7 +17,6 @@ package proptools
 import (
 	"bytes"
 	"reflect"
-
 	"testing"
 
 	"github.com/google/blueprint/parser"
@@ -962,6 +961,37 @@ func TestUnpackErrors(t *testing.T) {
 				`<input>:3:16: can't assign string value to list property "map_list"`,
 			},
 		},
+		{
+			name: "non-existent property",
+			input: `
+				m {
+					foo: {
+						foo_prop1: true,
+						foo_prop2: false,
+						foo_prop3: true,
+					},
+					bar: {
+						bar_prop: false,
+					},
+					baz: true,
+					exist: false,
+				}
+			`,
+			output: []interface{}{
+				&struct {
+					Foo struct {
+						Foo_prop1 bool
+					}
+					Exist bool
+				}{},
+			},
+			errors: []string{
+				`<input>:5:16: unrecognized property "foo.foo_prop2"`,
+				`<input>:6:16: unrecognized property "foo.foo_prop3"`,
+				`<input>:9:15: unrecognized property "bar.bar_prop"`,
+				`<input>:11:9: unrecognized property "baz"`,
+			},
+		},
 	}
 
 	for _, testCase := range testCases {
@@ -1195,4 +1225,59 @@ func BenchmarkUnpackProperties(b *testing.B) {
         `
 		run(b, props, bp)
 	})
+}
+
+func TestRemoveUnnecessaryUnusedNames(t *testing.T) {
+	testCases := []struct {
+		name   string
+		input  []string
+		output []string
+	}{
+		{
+			name:   "no unused names",
+			input:  []string{},
+			output: []string{},
+		},
+		{
+			name:   "only one unused name",
+			input:  []string{"a.b.c"},
+			output: []string{"a.b.c"},
+		},
+		{
+			name:   "unused names in a chain",
+			input:  []string{"a", "a.b", "a.b.c"},
+			output: []string{"a.b.c"},
+		},
+		{
+			name:   "unused names unrelated",
+			input:  []string{"a.b.c", "s.t", "x.y"},
+			output: []string{"a.b.c", "s.t", "x.y"},
+		},
+		{
+			name:   "unused names partially related one",
+			input:  []string{"a.b", "a.b.c", "a.b.d"},
+			output: []string{"a.b.c", "a.b.d"},
+		},
+		{
+			name:   "unused names partially related two",
+			input:  []string{"a", "a.b.c", "a.c"},
+			output: []string{"a.b.c", "a.c"},
+		},
+		{
+			name:   "unused names partially related three",
+			input:  []string{"a.b.c", "b.c", "c"},
+			output: []string{"a.b.c", "b.c", "c"},
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			simplifiedNames := removeUnnecessaryUnusedNames(testCase.input)
+			if !reflect.DeepEqual(simplifiedNames, testCase.output) {
+				t.Errorf("test case: %s", testCase.name)
+				t.Errorf("  input: %s", testCase.input)
+				t.Errorf("  expect: %s", testCase.output)
+				t.Errorf("  got: %s", simplifiedNames)
+			}
+		})
+	}
 }
