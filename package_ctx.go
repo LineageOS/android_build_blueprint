@@ -250,10 +250,9 @@ func (p *packageContext) ImportAs(as, pkgPath string) {
 }
 
 type staticVariable struct {
-	pctx      *packageContext
-	name_     string
-	value_    string
-	fullName_ string
+	pctx   *packageContext
+	name_  string
+	value_ string
 }
 
 // StaticVariable returns a Variable whose value does not depend on any
@@ -294,14 +293,7 @@ func (v *staticVariable) name() string {
 }
 
 func (v *staticVariable) fullName(pkgNames map[*packageContext]string) string {
-	if v.fullName_ != "" {
-		return v.fullName_
-	}
 	return packageNamespacePrefix(pkgNames[v.pctx]) + v.name_
-}
-
-func (v *staticVariable) memoizeFullName(pkgNames map[*packageContext]string) {
-	v.fullName_ = v.fullName(pkgNames)
 }
 
 func (v *staticVariable) value(VariableFuncContext, interface{}) (*ninjaString, error) {
@@ -318,10 +310,9 @@ func (v *staticVariable) String() string {
 }
 
 type variableFunc struct {
-	pctx      *packageContext
-	name_     string
-	value_    func(VariableFuncContext, interface{}) (string, error)
-	fullName_ string
+	pctx   *packageContext
+	name_  string
+	value_ func(VariableFuncContext, interface{}) (string, error)
 }
 
 // VariableFuncContext is passed to VariableFunc functions.
@@ -430,14 +421,7 @@ func (v *variableFunc) name() string {
 }
 
 func (v *variableFunc) fullName(pkgNames map[*packageContext]string) string {
-	if v.fullName_ != "" {
-		return v.fullName_
-	}
 	return packageNamespacePrefix(pkgNames[v.pctx]) + v.name_
-}
-
-func (v *variableFunc) memoizeFullName(pkgNames map[*packageContext]string) {
-	v.fullName_ = v.fullName(pkgNames)
 }
 
 func (v *variableFunc) value(ctx VariableFuncContext, config interface{}) (*ninjaString, error) {
@@ -500,10 +484,6 @@ func (v *argVariable) fullName(pkgNames map[*packageContext]string) string {
 	return v.name_
 }
 
-func (v *argVariable) memoizeFullName(pkgNames map[*packageContext]string) {
-	// Nothing to do, full name is known at initialization.
-}
-
 func (v *argVariable) value(ctx VariableFuncContext, config interface{}) (*ninjaString, error) {
 	return nil, errVariableIsArg
 }
@@ -513,10 +493,9 @@ func (v *argVariable) String() string {
 }
 
 type staticPool struct {
-	pctx      *packageContext
-	name_     string
-	params    PoolParams
-	fullName_ string
+	pctx   *packageContext
+	name_  string
+	params PoolParams
 }
 
 // StaticPool returns a Pool whose value does not depend on any configuration
@@ -558,14 +537,7 @@ func (p *staticPool) name() string {
 }
 
 func (p *staticPool) fullName(pkgNames map[*packageContext]string) string {
-	if p.fullName_ != "" {
-		return p.fullName_
-	}
 	return packageNamespacePrefix(pkgNames[p.pctx]) + p.name_
-}
-
-func (p *staticPool) memoizeFullName(pkgNames map[*packageContext]string) {
-	p.fullName_ = p.fullName(pkgNames)
 }
 
 func (p *staticPool) def(config interface{}) (*poolDef, error) {
@@ -584,7 +556,6 @@ type poolFunc struct {
 	pctx       *packageContext
 	name_      string
 	paramsFunc func(interface{}) (PoolParams, error)
-	fullName_  string
 }
 
 // PoolFunc returns a Pool whose value is determined by a function that takes a
@@ -629,14 +600,7 @@ func (p *poolFunc) name() string {
 }
 
 func (p *poolFunc) fullName(pkgNames map[*packageContext]string) string {
-	if p.fullName_ != "" {
-		return p.fullName_
-	}
 	return packageNamespacePrefix(pkgNames[p.pctx]) + p.name_
-}
-
-func (p *poolFunc) memoizeFullName(pkgNames map[*packageContext]string) {
-	p.fullName_ = p.fullName(pkgNames)
 }
 
 func (p *poolFunc) def(config interface{}) (*poolDef, error) {
@@ -671,10 +635,6 @@ func (p *builtinPool) fullName(pkgNames map[*packageContext]string) string {
 	return p.name_
 }
 
-func (p *builtinPool) memoizeFullName(pkgNames map[*packageContext]string) {
-	// Nothing to do, full name is known at initialization.
-}
-
 func (p *builtinPool) def(config interface{}) (*poolDef, error) {
 	return nil, errPoolIsBuiltin
 }
@@ -696,7 +656,6 @@ type staticRule struct {
 	params     RuleParams
 	argNames   map[string]bool
 	scope_     *basicScope
-	fullName_  string
 	sync.Mutex // protects scope_ during lazy creation
 }
 
@@ -764,14 +723,7 @@ func (r *staticRule) name() string {
 }
 
 func (r *staticRule) fullName(pkgNames map[*packageContext]string) string {
-	if r.fullName_ != "" {
-		return r.fullName_
-	}
 	return packageNamespacePrefix(pkgNames[r.pctx]) + r.name_
-}
-
-func (r *staticRule) memoizeFullName(pkgNames map[*packageContext]string) {
-	r.fullName_ = r.fullName(pkgNames)
 }
 
 func (r *staticRule) def(interface{}) (*ruleDef, error) {
@@ -809,7 +761,6 @@ type ruleFunc struct {
 	paramsFunc func(interface{}) (RuleParams, error)
 	argNames   map[string]bool
 	scope_     *basicScope
-	fullName_  string
 	sync.Mutex // protects scope_ during lazy creation
 }
 
@@ -878,14 +829,7 @@ func (r *ruleFunc) name() string {
 }
 
 func (r *ruleFunc) fullName(pkgNames map[*packageContext]string) string {
-	if r.fullName_ != "" {
-		return r.fullName_
-	}
 	return packageNamespacePrefix(pkgNames[r.pctx]) + r.name_
-}
-
-func (r *ruleFunc) memoizeFullName(pkgNames map[*packageContext]string) {
-	r.fullName_ = r.fullName(pkgNames)
 }
 
 func (r *ruleFunc) def(config interface{}) (*ruleDef, error) {
@@ -937,10 +881,6 @@ func (r *builtinRule) name() string {
 
 func (r *builtinRule) fullName(pkgNames map[*packageContext]string) string {
 	return r.name_
-}
-
-func (r *builtinRule) memoizeFullName(pkgNames map[*packageContext]string) {
-	// Nothing to do, full name is known at initialization.
 }
 
 func (r *builtinRule) def(config interface{}) (*ruleDef, error) {

@@ -28,7 +28,6 @@ type Variable interface {
 	packageContext() *packageContext
 	name() string                                        // "foo"
 	fullName(pkgNames map[*packageContext]string) string // "pkg.foo" or "path.to.pkg.foo"
-	memoizeFullName(pkgNames map[*packageContext]string) // precompute fullName if desired
 	value(ctx VariableFuncContext, config interface{}) (*ninjaString, error)
 	String() string
 }
@@ -39,7 +38,6 @@ type Pool interface {
 	packageContext() *packageContext
 	name() string                                        // "foo"
 	fullName(pkgNames map[*packageContext]string) string // "pkg.foo" or "path.to.pkg.foo"
-	memoizeFullName(pkgNames map[*packageContext]string) // precompute fullName if desired
 	def(config interface{}) (*poolDef, error)
 	String() string
 }
@@ -50,7 +48,6 @@ type Rule interface {
 	packageContext() *packageContext
 	name() string                                        // "foo"
 	fullName(pkgNames map[*packageContext]string) string // "pkg.foo" or "path.to.pkg.foo"
-	memoizeFullName(pkgNames map[*packageContext]string) // precompute fullName if desired
 	def(config interface{}) (*ruleDef, error)
 	scope() *basicScope
 	isArg(argName string) bool
@@ -369,10 +366,6 @@ func (l *localVariable) fullName(pkgNames map[*packageContext]string) string {
 	return l.fullName_
 }
 
-func (l *localVariable) memoizeFullName(pkgNames map[*packageContext]string) {
-	// Nothing to do, full name is known at initialization.
-}
-
 func (l *localVariable) value(VariableFuncContext, interface{}) (*ninjaString, error) {
 	return l.value_, nil
 }
@@ -401,10 +394,6 @@ func (l *localRule) fullName(pkgNames map[*packageContext]string) string {
 	return l.fullName_
 }
 
-func (l *localRule) memoizeFullName(pkgNames map[*packageContext]string) {
-	// Nothing to do, full name is known at initialization.
-}
-
 func (l *localRule) def(interface{}) (*ruleDef, error) {
 	return l.def_, nil
 }
@@ -419,4 +408,42 @@ func (r *localRule) isArg(argName string) bool {
 
 func (r *localRule) String() string {
 	return "<local rule>:" + r.fullName_
+}
+
+type nameTracker struct {
+	variables map[Variable]string
+	rules     map[Rule]string
+	pools     map[Pool]string
+
+	pkgNames map[*packageContext]string
+}
+
+func (m *nameTracker) Variable(v Variable) string {
+	if m == nil {
+		return v.fullName(nil)
+	}
+	if name, ok := m.variables[v]; ok {
+		return name
+	}
+	return v.fullName(m.pkgNames)
+}
+
+func (m *nameTracker) Rule(r Rule) string {
+	if m == nil {
+		return r.fullName(nil)
+	}
+	if name, ok := m.rules[r]; ok {
+		return name
+	}
+	return r.fullName(m.pkgNames)
+}
+
+func (m *nameTracker) Pool(p Pool) string {
+	if m == nil {
+		return p.fullName(nil)
+	}
+	if name, ok := m.pools[p]; ok {
+		return name
+	}
+	return p.fullName(m.pkgNames)
 }
