@@ -16,6 +16,7 @@ package blueprint
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -29,6 +30,7 @@ import (
 	"reflect"
 	"runtime"
 	"runtime/pprof"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -100,7 +102,7 @@ type Context struct {
 	allowMissingDependencies bool
 
 	// set during PrepareBuildActions
-	pkgNames        map[*packageContext]string
+	nameTracker     *nameTracker
 	liveGlobals     *liveTracker
 	globalVariables map[Variable]*ninjaString
 	globalPools     map[Pool]*poolDef
@@ -2741,7 +2743,7 @@ func jsonModuleFromModuleInfo(m *moduleInfo) *JsonModule {
 	return result
 }
 
-func jsonModuleWithActionsFromModuleInfo(m *moduleInfo) *JsonModule {
+func jsonModuleWithActionsFromModuleInfo(m *moduleInfo, nameTracker *nameTracker) *JsonModule {
 	result := &JsonModule{
 		jsonModuleName: jsonModuleName{
 			Name:    m.Name(),
@@ -2758,17 +2760,17 @@ func jsonModuleWithActionsFromModuleInfo(m *moduleInfo) *JsonModule {
 			Inputs: append(append(append(
 				bDef.InputStrings,
 				bDef.ImplicitStrings...),
-				getNinjaStringsWithNilPkgNames(bDef.Inputs)...),
-				getNinjaStringsWithNilPkgNames(bDef.Implicits)...),
+				getNinjaStrings(bDef.Inputs, nameTracker)...),
+				getNinjaStrings(bDef.Implicits, nameTracker)...),
 
 			Outputs: append(append(append(
 				bDef.OutputStrings,
 				bDef.ImplicitOutputStrings...),
-				getNinjaStringsWithNilPkgNames(bDef.Outputs)...),
-				getNinjaStringsWithNilPkgNames(bDef.ImplicitOutputs)...),
+				getNinjaStrings(bDef.Outputs, nameTracker)...),
+				getNinjaStrings(bDef.ImplicitOutputs, nameTracker)...),
 		}
 		if d, ok := bDef.Variables["description"]; ok {
-			a.Desc = d.Value(nil)
+			a.Desc = d.Value(nameTracker)
 		}
 		actions = append(actions, a)
 	}
@@ -2786,12 +2788,11 @@ func jsonModuleWithActionsFromModuleInfo(m *moduleInfo) *JsonModule {
 	return result
 }
 
-// Gets a list of strings from the given list of ninjaStrings by invoking ninjaString.Value with
-// nil pkgNames on each of the input ninjaStrings.
-func getNinjaStringsWithNilPkgNames(nStrs []*ninjaString) []string {
+// Gets a list of strings from the given list of ninjaStrings by invoking ninjaString.Value on each.
+func getNinjaStrings(nStrs []*ninjaString, nameTracker *nameTracker) []string {
 	var strs []string
 	for _, nstr := range nStrs {
-		strs = append(strs, nstr.Value(nil))
+		strs = append(strs, nstr.Value(nameTracker))
 	}
 	return strs
 }
@@ -2799,7 +2800,7 @@ func getNinjaStringsWithNilPkgNames(nStrs []*ninjaString) []string {
 func (c *Context) GetWeightedOutputsFromPredicate(predicate func(*JsonModule) (bool, int)) map[string]int {
 	outputToWeight := make(map[string]int)
 	for _, m := range c.modulesSorted {
-		jmWithActions := jsonModuleWithActionsFromModuleInfo(m)
+		jmWithActions := jsonModuleWithActionsFromModuleInfo(m, c.nameTracker)
 		if ok, weight := predicate(jmWithActions); ok {
 			for _, a := range jmWithActions.Module["Actions"].([]JSONAction) {
 				for _, o := range a.Outputs {
@@ -2831,7 +2832,7 @@ func (c *Context) PrintJSONGraphAndActions(wGraph io.Writer, wActions io.Writer)
 	modulesToActions := make([]*JsonModule, 0)
 	for _, m := range c.modulesSorted {
 		jm := jsonModuleFromModuleInfo(m)
-		jmWithActions := jsonModuleWithActionsFromModuleInfo(m)
+		jmWithActions := jsonModuleWithActionsFromModuleInfo(m, c.nameTracker)
 		for _, d := range m.directDeps {
 			jm.Deps = append(jm.Deps, jsonDep{
 				jsonModuleName: *jsonModuleNameFromModuleInfo(d.module),
@@ -2918,12 +2919,12 @@ func (c *Context) PrepareBuildActions(config interface{}) (deps []string, errs [
 
 		deps = append(deps, depsPackages...)
 
-		c.memoizeFullNames(c.liveGlobals, pkgNames)
+		nameTracker := c.memoizeFullNames(c.liveGlobals, pkgNames)
 
 		// This will panic if it finds a problem since it's a programming error.
-		c.checkForVariableReferenceCycles(c.liveGlobals.variables, pkgNames)
+		c.checkForVariableReferenceCycles(c.liveGlobals.variables, nameTracker)
 
-		c.pkgNames = pkgNames
+		c.nameTracker = nameTracker
 		c.globalVariables = c.liveGlobals.variables
 		c.globalPools = c.liveGlobals.pools
 		c.globalRules = c.liveGlobals.rules
@@ -3862,20 +3863,27 @@ func (c *Context) makeUniquePackageNames(
 // memoizeFullNames stores the full name of each live global variable, rule and pool since each is
 // guaranteed to be used at least twice, once in the definition and once for each usage, and many
 // are used much more than once.
-func (c *Context) memoizeFullNames(liveGlobals *liveTracker, pkgNames map[*packageContext]string) {
+func (c *Context) memoizeFullNames(liveGlobals *liveTracker, pkgNames map[*packageContext]string) *nameTracker {
+	nameTracker := &nameTracker{
+		pkgNames:  pkgNames,
+		variables: make(map[Variable]string),
+		rules:     make(map[Rule]string),
+		pools:     make(map[Pool]string),
+	}
 	for v := range liveGlobals.variables {
-		v.memoizeFullName(pkgNames)
+		nameTracker.variables[v] = v.fullName(pkgNames)
 	}
 	for r := range liveGlobals.rules {
-		r.memoizeFullName(pkgNames)
+		nameTracker.rules[r] = r.fullName(pkgNames)
 	}
 	for p := range liveGlobals.pools {
-		p.memoizeFullName(pkgNames)
+		nameTracker.pools[p] = p.fullName(pkgNames)
 	}
+	return nameTracker
 }
 
 func (c *Context) checkForVariableReferenceCycles(
-	variables map[Variable]*ninjaString, pkgNames map[*packageContext]string) {
+	variables map[Variable]*ninjaString, nameTracker *nameTracker) {
 
 	visited := make(map[Variable]bool)  // variables that were already checked
 	checking := make(map[Variable]bool) // variables actively being checked
@@ -3905,12 +3913,12 @@ func (c *Context) checkForVariableReferenceCycles(
 						msgs := []string{"detected variable reference cycle:"}
 
 						// Iterate backwards through the cycle list.
-						curName := v.fullName(pkgNames)
-						curValue := value.Value(pkgNames)
+						curName := nameTracker.Variable(v)
+						curValue := value.Value(nameTracker)
 						for i := len(cycle) - 1; i >= 0; i-- {
 							next := cycle[i]
-							nextName := next.fullName(pkgNames)
-							nextValue := variables[next].Value(pkgNames)
+							nextName := nameTracker.Variable(next)
+							nextValue := variables[next].Value(nameTracker)
 
 							msgs = append(msgs, fmt.Sprintf(
 								"    %q depends on %q", curName, nextName))
@@ -3958,7 +3966,7 @@ func (c *Context) AllTargets() (map[string]string, error) {
 	targets := map[string]string{}
 	var collectTargets = func(actionDefs localBuildActions) error {
 		for _, buildDef := range actionDefs.buildDefs {
-			ruleName := buildDef.Rule.fullName(c.pkgNames)
+			ruleName := c.nameTracker.Rule(buildDef.Rule)
 			for _, output := range append(buildDef.Outputs, buildDef.ImplicitOutputs...) {
 				outputValue, err := output.Eval(c.globalVariables)
 				if err != nil {
@@ -4266,7 +4274,7 @@ func (c *Context) writeBuildFileHeader(nw *ninjaWriter) error {
 
 	var pkgs []pkgAssociation
 	maxNameLen := 0
-	for pkg, name := range c.pkgNames {
+	for pkg, name := range c.nameTracker.pkgNames {
 		pkgs = append(pkgs, pkgAssociation{
 			PkgName: name,
 			PkgPath: pkg.pkgPath,
@@ -4319,7 +4327,7 @@ func (c *Context) writeSubninjas(nw *ninjaWriter) error {
 
 func (c *Context) writeBuildDir(nw *ninjaWriter) error {
 	if c.outDir != nil {
-		err := nw.Assign("builddir", c.outDir.Value(c.pkgNames))
+		err := nw.Assign("builddir", c.outDir.Value(c.nameTracker))
 		if err != nil {
 			return err
 		}
@@ -4330,29 +4338,6 @@ func (c *Context) writeBuildDir(nw *ninjaWriter) error {
 		}
 	}
 	return nil
-}
-
-type globalEntity interface {
-	fullName(pkgNames map[*packageContext]string) string
-}
-
-type globalEntitySorter struct {
-	pkgNames map[*packageContext]string
-	entities []globalEntity
-}
-
-func (s *globalEntitySorter) Len() int {
-	return len(s.entities)
-}
-
-func (s *globalEntitySorter) Less(i, j int) bool {
-	iName := s.entities[i].fullName(s.pkgNames)
-	jName := s.entities[j].fullName(s.pkgNames)
-	return iName < jName
-}
-
-func (s *globalEntitySorter) Swap(i, j int) {
-	s.entities[i], s.entities[j] = s.entities[j], s.entities[i]
 }
 
 func (c *Context) writeGlobalVariables(nw *ninjaWriter) error {
@@ -4373,7 +4358,7 @@ func (c *Context) writeGlobalVariables(nw *ninjaWriter) error {
 			}
 		}
 
-		err := nw.Assign(v.fullName(c.pkgNames), value.Value(c.pkgNames))
+		err := nw.Assign(c.nameTracker.Variable(v), value.Value(c.nameTracker))
 		if err != nil {
 			return err
 		}
@@ -4386,15 +4371,16 @@ func (c *Context) writeGlobalVariables(nw *ninjaWriter) error {
 		return nil
 	}
 
-	globalVariables := make([]globalEntity, 0, len(c.globalVariables))
+	globalVariables := make([]Variable, 0, len(c.globalVariables))
 	for variable := range c.globalVariables {
 		globalVariables = append(globalVariables, variable)
 	}
 
-	sort.Sort(&globalEntitySorter{c.pkgNames, globalVariables})
+	slices.SortFunc(globalVariables, func(a, b Variable) int {
+		return cmp.Compare(c.nameTracker.Variable(a), c.nameTracker.Variable(b))
+	})
 
-	for _, entity := range globalVariables {
-		v := entity.(Variable)
+	for _, v := range globalVariables {
 		if !visited[v] {
 			err := walk(v)
 			if err != nil {
@@ -4407,16 +4393,17 @@ func (c *Context) writeGlobalVariables(nw *ninjaWriter) error {
 }
 
 func (c *Context) writeGlobalPools(nw *ninjaWriter) error {
-	globalPools := make([]globalEntity, 0, len(c.globalPools))
+	globalPools := make([]Pool, 0, len(c.globalPools))
 	for pool := range c.globalPools {
 		globalPools = append(globalPools, pool)
 	}
 
-	sort.Sort(&globalEntitySorter{c.pkgNames, globalPools})
+	slices.SortFunc(globalPools, func(a, b Pool) int {
+		return cmp.Compare(c.nameTracker.Pool(a), c.nameTracker.Pool(b))
+	})
 
-	for _, entity := range globalPools {
-		pool := entity.(Pool)
-		name := pool.fullName(c.pkgNames)
+	for _, pool := range globalPools {
+		name := c.nameTracker.Pool(pool)
 		def := c.globalPools[pool]
 		err := def.WriteTo(nw, name)
 		if err != nil {
@@ -4433,18 +4420,19 @@ func (c *Context) writeGlobalPools(nw *ninjaWriter) error {
 }
 
 func (c *Context) writeGlobalRules(nw *ninjaWriter) error {
-	globalRules := make([]globalEntity, 0, len(c.globalRules))
+	globalRules := make([]Rule, 0, len(c.globalRules))
 	for rule := range c.globalRules {
 		globalRules = append(globalRules, rule)
 	}
 
-	sort.Sort(&globalEntitySorter{c.pkgNames, globalRules})
+	slices.SortFunc(globalRules, func(a, b Rule) int {
+		return cmp.Compare(c.nameTracker.Rule(a), c.nameTracker.Rule(b))
+	})
 
-	for _, entity := range globalRules {
-		rule := entity.(Rule)
-		name := rule.fullName(c.pkgNames)
+	for _, rule := range globalRules {
+		name := c.nameTracker.Rule(rule)
 		def := c.globalRules[rule]
-		err := def.WriteTo(nw, name, c.pkgNames)
+		err := def.WriteTo(nw, name, c.nameTracker)
 		if err != nil {
 			return err
 		}
@@ -4766,7 +4754,7 @@ func (c *Context) writeLocalBuildActions(nw *ninjaWriter,
 		if err != nil {
 			panic(err)
 		}
-		err = nw.Assign(name, value.Value(c.pkgNames))
+		err = nw.Assign(name, value.Value(c.nameTracker))
 		if err != nil {
 			return err
 		}
@@ -4789,7 +4777,7 @@ func (c *Context) writeLocalBuildActions(nw *ninjaWriter,
 			panic(err)
 		}
 
-		err = def.WriteTo(nw, name, c.pkgNames)
+		err = def.WriteTo(nw, name, c.nameTracker)
 		if err != nil {
 			return err
 		}
@@ -4802,7 +4790,7 @@ func (c *Context) writeLocalBuildActions(nw *ninjaWriter,
 
 	// Write the build definitions.
 	for _, buildDef := range defs.buildDefs {
-		err := buildDef.WriteTo(nw, c.pkgNames)
+		err := buildDef.WriteTo(nw, c.nameTracker)
 		if err != nil {
 			return err
 		}

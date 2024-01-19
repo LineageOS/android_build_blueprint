@@ -229,8 +229,7 @@ func parseRuleParams(scope scope, params *RuleParams) (*ruleDef,
 	return r, nil
 }
 
-func (r *ruleDef) WriteTo(nw *ninjaWriter, name string,
-	pkgNames map[*packageContext]string) error {
+func (r *ruleDef) WriteTo(nw *ninjaWriter, name string, nameTracker *nameTracker) error {
 
 	if r.Comment != "" {
 		err := nw.Comment(r.Comment)
@@ -245,13 +244,13 @@ func (r *ruleDef) WriteTo(nw *ninjaWriter, name string,
 	}
 
 	if r.Pool != nil {
-		err = nw.ScopedAssign("pool", r.Pool.fullName(pkgNames))
+		err = nw.ScopedAssign("pool", nameTracker.Pool(r.Pool))
 		if err != nil {
 			return err
 		}
 	}
 
-	err = writeVariables(nw, r.Variables, pkgNames)
+	err = writeVariables(nw, r.Variables, nameTracker)
 	if err != nil {
 		return err
 	}
@@ -415,10 +414,10 @@ func parseBuildParams(scope scope, params *BuildParams,
 	return b, nil
 }
 
-func (b *buildDef) WriteTo(nw *ninjaWriter, pkgNames map[*packageContext]string) error {
+func (b *buildDef) WriteTo(nw *ninjaWriter, nameTracker *nameTracker) error {
 	var (
 		comment             = b.Comment
-		rule                = b.Rule.fullName(pkgNames)
+		rule                = nameTracker.Rule(b.Rule)
 		outputs             = b.Outputs
 		implicitOuts        = b.ImplicitOutputs
 		explicitDeps        = b.Inputs
@@ -441,12 +440,12 @@ func (b *buildDef) WriteTo(nw *ninjaWriter, pkgNames map[*packageContext]string)
 	err := nw.Build(comment, rule, outputs, implicitOuts, explicitDeps, implicitDeps, orderOnlyDeps, validations,
 		outputStrings, implicitOutStrings, explicitDepStrings,
 		implicitDepStrings, orderOnlyDepStrings, validationStrings,
-		pkgNames)
+		nameTracker)
 	if err != nil {
 		return err
 	}
 
-	err = writeVariables(nw, b.Variables, pkgNames)
+	err = writeVariables(nw, b.Variables, nameTracker)
 	if err != nil {
 		return err
 	}
@@ -458,8 +457,8 @@ func (b *buildDef) WriteTo(nw *ninjaWriter, pkgNames map[*packageContext]string)
 	args := make([]nameValuePair, 0, len(b.Args))
 
 	for argVar, value := range b.Args {
-		fullName := argVar.fullName(pkgNames)
-		args = append(args, nameValuePair{fullName, value.Value(pkgNames)})
+		fullName := nameTracker.Variable(argVar)
+		args = append(args, nameValuePair{fullName, value.Value(nameTracker)})
 	}
 	sort.Slice(args, func(i, j int) bool { return args[i].name < args[j].name })
 
@@ -471,7 +470,7 @@ func (b *buildDef) WriteTo(nw *ninjaWriter, pkgNames map[*packageContext]string)
 	}
 
 	if !b.Optional {
-		err = nw.Default(pkgNames, outputs, outputStrings)
+		err = nw.Default(nameTracker, outputs, outputStrings)
 		if err != nil {
 			return err
 		}
@@ -480,8 +479,7 @@ func (b *buildDef) WriteTo(nw *ninjaWriter, pkgNames map[*packageContext]string)
 	return nw.BlankLine()
 }
 
-func writeVariables(nw *ninjaWriter, variables map[string]*ninjaString,
-	pkgNames map[*packageContext]string) error {
+func writeVariables(nw *ninjaWriter, variables map[string]*ninjaString, nameTracker *nameTracker) error {
 	var keys []string
 	for k := range variables {
 		keys = append(keys, k)
@@ -489,7 +487,7 @@ func writeVariables(nw *ninjaWriter, variables map[string]*ninjaString,
 	sort.Strings(keys)
 
 	for _, name := range keys {
-		err := nw.ScopedAssign(name, variables[name].Value(pkgNames))
+		err := nw.ScopedAssign(name, variables[name].Value(nameTracker))
 		if err != nil {
 			return err
 		}
