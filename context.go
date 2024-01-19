@@ -3520,6 +3520,10 @@ func (c *Context) generateSingletonBuildActions(config interface{},
 		errs = append(errs, newErrs...)
 	}
 
+	// Force a resort of the module groups before running singletons so that two singletons running in parallel
+	// don't cause a data race when they trigger a resort in VisitAllModules.
+	c.sortedModuleGroups()
+
 	// First, take care of any singletons that want to run in parallel.
 	deps, errs = c.generateParallelSingletonBuildActions(config, singletons, liveGlobals)
 
