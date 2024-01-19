@@ -324,17 +324,16 @@ func parseNinjaOrSimpleStrings(scope scope, strs []string) ([]*ninjaString, []st
 	return ninjaStrings, simpleStrings, nil
 }
 
-func (n *ninjaString) Value(pkgNames map[*packageContext]string) string {
+func (n *ninjaString) Value(nameTracker *nameTracker) string {
 	if n.variables == nil || len(*n.variables) == 0 {
 		return defaultEscaper.Replace(n.str)
 	}
 	str := &strings.Builder{}
-	n.ValueWithEscaper(str, pkgNames, defaultEscaper)
+	n.ValueWithEscaper(str, nameTracker, defaultEscaper)
 	return str.String()
 }
 
-func (n *ninjaString) ValueWithEscaper(w io.StringWriter, pkgNames map[*packageContext]string,
-	escaper *strings.Replacer) {
+func (n *ninjaString) ValueWithEscaper(w io.StringWriter, nameTracker *nameTracker, escaper *strings.Replacer) {
 
 	if n.variables == nil || len(*n.variables) == 0 {
 		w.WriteString(escaper.Replace(n.str))
@@ -348,7 +347,7 @@ func (n *ninjaString) ValueWithEscaper(w io.StringWriter, pkgNames map[*packageC
 			w.WriteString("$ ")
 		} else {
 			w.WriteString("${")
-			w.WriteString(v.variable.fullName(pkgNames))
+			w.WriteString(nameTracker.Variable(v.variable))
 			w.WriteString("}")
 		}
 		i = int(v.end)

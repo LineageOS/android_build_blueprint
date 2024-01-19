@@ -117,7 +117,7 @@ func (n *ninjaWriter) Build(comment string, rule string, outputs, implicitOuts,
 	explicitDeps, implicitDeps, orderOnlyDeps, validations []*ninjaString,
 	outputStrings, implicitOutStrings, explicitDepStrings,
 	implicitDepStrings, orderOnlyDepStrings, validationStrings []string,
-	pkgNames map[*packageContext]string) error {
+	nameTracker *nameTracker) error {
 
 	n.justDidBlankLine = false
 
@@ -144,7 +144,7 @@ func (n *ninjaWriter) Build(comment string, rule string, outputs, implicitOuts,
 	}
 	for _, output := range outputs {
 		wrapper.Space()
-		output.ValueWithEscaper(wrapper, pkgNames, outputEscaper)
+		output.ValueWithEscaper(wrapper, nameTracker, outputEscaper)
 	}
 
 	if len(implicitOuts) > 0 || len(implicitOutStrings) > 0 {
@@ -156,7 +156,7 @@ func (n *ninjaWriter) Build(comment string, rule string, outputs, implicitOuts,
 		}
 		for _, out := range implicitOuts {
 			wrapper.Space()
-			out.ValueWithEscaper(wrapper, pkgNames, outputEscaper)
+			out.ValueWithEscaper(wrapper, nameTracker, outputEscaper)
 		}
 	}
 
@@ -170,7 +170,7 @@ func (n *ninjaWriter) Build(comment string, rule string, outputs, implicitOuts,
 	}
 	for _, dep := range explicitDeps {
 		wrapper.Space()
-		dep.ValueWithEscaper(wrapper, pkgNames, inputEscaper)
+		dep.ValueWithEscaper(wrapper, nameTracker, inputEscaper)
 	}
 
 	if len(implicitDeps) > 0 || len(implicitDepStrings) > 0 {
@@ -182,7 +182,7 @@ func (n *ninjaWriter) Build(comment string, rule string, outputs, implicitOuts,
 		}
 		for _, dep := range implicitDeps {
 			wrapper.Space()
-			dep.ValueWithEscaper(wrapper, pkgNames, inputEscaper)
+			dep.ValueWithEscaper(wrapper, nameTracker, inputEscaper)
 		}
 	}
 
@@ -195,7 +195,7 @@ func (n *ninjaWriter) Build(comment string, rule string, outputs, implicitOuts,
 		}
 		for _, dep := range orderOnlyDeps {
 			wrapper.Space()
-			dep.ValueWithEscaper(wrapper, pkgNames, inputEscaper)
+			dep.ValueWithEscaper(wrapper, nameTracker, inputEscaper)
 		}
 	}
 
@@ -208,7 +208,7 @@ func (n *ninjaWriter) Build(comment string, rule string, outputs, implicitOuts,
 		}
 		for _, dep := range validations {
 			wrapper.Space()
-			dep.ValueWithEscaper(wrapper, pkgNames, inputEscaper)
+			dep.ValueWithEscaper(wrapper, nameTracker, inputEscaper)
 		}
 	}
 
@@ -261,7 +261,7 @@ func (n *ninjaWriter) ScopedAssign(name, value string) error {
 	return nil
 }
 
-func (n *ninjaWriter) Default(pkgNames map[*packageContext]string, targets []*ninjaString, targetStrings []string) error {
+func (n *ninjaWriter) Default(nameTracker *nameTracker, targets []*ninjaString, targetStrings []string) error {
 	n.justDidBlankLine = false
 
 	const lineWrapLen = len(" $")
@@ -280,7 +280,7 @@ func (n *ninjaWriter) Default(pkgNames map[*packageContext]string, targets []*ni
 	}
 	for _, target := range targets {
 		wrapper.Space()
-		target.ValueWithEscaper(wrapper, pkgNames, outputEscaper)
+		target.ValueWithEscaper(wrapper, nameTracker, outputEscaper)
 	}
 
 	return wrapper.Flush()
