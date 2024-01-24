@@ -697,6 +697,10 @@ type OutgoingTransitionContext interface {
 	// DepTag() Returns the dependency tag through which this dependency is
 	// reached
 	DepTag() DependencyTag
+
+	// Config returns the config object that was passed to
+	// Context.PrepareBuildActions.
+	Config() interface{}
 }
 
 // TransitionMutator implements a top-down mechanism where a module tells its
