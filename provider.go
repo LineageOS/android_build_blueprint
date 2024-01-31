@@ -16,6 +16,8 @@ package blueprint
 
 import (
 	"fmt"
+
+	"github.com/google/blueprint/proptools"
 )
 
 // This file implements Providers, modelled after Bazel
@@ -151,6 +153,17 @@ func (c *Context) setProvider(m *moduleInfo, provider *providerKey, value any) {
 	}
 
 	m.providers[provider.id] = value
+
+	if c.verifyProvidersAreUnchanged {
+		if m.providerInitialValueHashes == nil {
+			m.providerInitialValueHashes = make([]uint64, len(providerRegistry))
+		}
+		hash, err := proptools.HashProvider(value)
+		if err != nil {
+			panic(fmt.Sprintf("Can't set value of provider %s: %s", provider.typ, err.Error()))
+		}
+		m.providerInitialValueHashes[provider.id] = hash
+	}
 }
 
 // provider returns the value, if any, for a given provider for a module.  Verifies that it is

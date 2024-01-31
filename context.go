@@ -101,6 +101,8 @@ type Context struct {
 	// set by SetAllowMissingDependencies
 	allowMissingDependencies bool
 
+	verifyProvidersAreUnchanged bool
+
 	// set during PrepareBuildActions
 	nameTracker     *nameTracker
 	liveGlobals     *liveTracker
@@ -351,7 +353,8 @@ type moduleInfo struct {
 	// set during PrepareBuildActions
 	actionDefs localBuildActions
 
-	providers []interface{}
+	providers                  []interface{}
+	providerInitialValueHashes []uint64
 
 	startedMutator  *mutatorInfo
 	finishedMutator *mutatorInfo
@@ -463,20 +466,21 @@ type mutatorInfo struct {
 func newContext() *Context {
 	eventHandler := metrics.EventHandler{}
 	return &Context{
-		Context:            context.Background(),
-		EventHandler:       &eventHandler,
-		moduleFactories:    make(map[string]ModuleFactory),
-		nameInterface:      NewSimpleNameInterface(),
-		moduleInfo:         make(map[Module]*moduleInfo),
-		globs:              make(map[globKey]pathtools.GlobResult),
-		fs:                 pathtools.OsFs,
-		finishedMutators:   make(map[*mutatorInfo]bool),
-		includeTags:        &IncludeTags{},
-		sourceRootDirs:     &SourceRootDirs{},
-		outDir:             nil,
-		requiredNinjaMajor: 1,
-		requiredNinjaMinor: 7,
-		requiredNinjaMicro: 0,
+		Context:                     context.Background(),
+		EventHandler:                &eventHandler,
+		moduleFactories:             make(map[string]ModuleFactory),
+		nameInterface:               NewSimpleNameInterface(),
+		moduleInfo:                  make(map[Module]*moduleInfo),
+		globs:                       make(map[globKey]pathtools.GlobResult),
+		fs:                          pathtools.OsFs,
+		finishedMutators:            make(map[*mutatorInfo]bool),
+		includeTags:                 &IncludeTags{},
+		sourceRootDirs:              &SourceRootDirs{},
+		outDir:                      nil,
+		requiredNinjaMajor:          1,
+		requiredNinjaMinor:          7,
+		requiredNinjaMicro:          0,
+		verifyProvidersAreUnchanged: true,
 	}
 }
 
@@ -950,6 +954,18 @@ func (c *Context) SetIgnoreUnknownModuleTypes(ignoreUnknownModuleTypes bool) {
 // for missing dependencies.
 func (c *Context) SetAllowMissingDependencies(allowMissingDependencies bool) {
 	c.allowMissingDependencies = allowMissingDependencies
+}
+
+// SetVerifyProvidersAreUnchanged makes blueprint hash all providers immediately
+// after SetProvider() is called, and then hash them again after the build finished.
+// If the hashes change, it's an error. Providers are supposed to be immutable, but
+// we don't have any more direct way to enforce that in go.
+func (c *Context) SetVerifyProvidersAreUnchanged(verifyProvidersAreUnchanged bool) {
+	c.verifyProvidersAreUnchanged = verifyProvidersAreUnchanged
+}
+
+func (c *Context) GetVerifyProvidersAreUnchanged() bool {
+	return c.verifyProvidersAreUnchanged
 }
 
 func (c *Context) SetModuleListFile(listFile string) {
@@ -1730,6 +1746,7 @@ func (c *Context) createVariations(origModule *moduleInfo, mutatorName string,
 		newModule.variant = newVariant(origModule, mutatorName, variationName, local)
 		newModule.properties = newProperties
 		newModule.providers = append([]interface{}(nil), origModule.providers...)
+		newModule.providerInitialValueHashes = append([]uint64(nil), origModule.providerInitialValueHashes...)
 
 		newModules = append(newModules, newModule)
 
@@ -4205,6 +4222,34 @@ func (c *Context) SingletonName(singleton Singleton) string {
 		}
 	}
 	return ""
+}
+
+// Checks that the hashes of all the providers match the hashes from when they were first set.
+// Does nothing on success, returns a list of errors otherwise. It's recommended to run this
+// in a goroutine.
+func (c *Context) VerifyProvidersWereUnchanged() []error {
+	if !c.buildActionsReady {
+		return []error{ErrBuildActionsNotReady}
+	}
+	var errors []error
+	for _, m := range c.modulesSorted {
+		for i, provider := range m.providers {
+			if provider != nil {
+				hash, err := proptools.HashProvider(provider)
+				if err != nil {
+					errors = append(errors, fmt.Errorf("provider %q on module %q was modified after being set, and no longer hashable afterwards: %s", providerRegistry[i].typ, m.Name(), err.Error()))
+					continue
+				}
+				if provider != nil && m.providerInitialValueHashes[i] != hash {
+					errors = append(errors, fmt.Errorf("provider %q on module %q was modified after being set", providerRegistry[i].typ, m.Name()))
+				}
+			} else if m.providerInitialValueHashes[i] != 0 {
+				// This should be unreachable, because in setProvider we check if the provider has already been set.
+				errors = append(errors, fmt.Errorf("provider %q on module %q was unset somehow, this is an internal error", providerRegistry[i].typ, m.Name()))
+			}
+		}
+	}
+	return errors
 }
 
 // WriteBuildFile writes the Ninja manifest text for the generated build
