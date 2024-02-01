@@ -441,7 +441,10 @@ func (vm variationMap) subsetOf(other variationMap) bool {
 }
 
 func (vm variationMap) equal(other variationMap) bool {
-	return reflect.DeepEqual(vm, other)
+	if len(vm) != len(other) {
+		return false
+	}
+	return vm.subsetOf(other)
 }
 
 type singletonInfo struct {
