@@ -172,7 +172,7 @@ func (ctx *unpackContext) buildPropertyMap(prefix string, properties []*parser.P
 				continue
 			}
 
-			itemProperties := make([]*parser.Property, len(propValue.Values), len(propValue.Values))
+			itemProperties := make([]*parser.Property, len(propValue.Values))
 			for i, expr := range propValue.Values {
 				itemProperties[i] = &parser.Property{
 					Name:     property.Name + "[" + strconv.Itoa(i) + "]",
@@ -301,7 +301,18 @@ func (ctx *unpackContext) unpackToStruct(namePrefix string, structValue reflect.
 			continue
 		}
 
-		if isStruct(fieldValue.Type()) {
+		if isConfigurable(fieldValue.Type()) {
+			// configurableType is the reflect.Type representation of a Configurable[whatever],
+			// while configuredType is the reflect.Type of the "whatever".
+			configurableType := fieldValue.Type()
+			configuredType := fieldValue.Interface().(configurableReflection).configuredType()
+			if unpackedValue, ok := ctx.unpackToConfigurable(propertyName, property, configurableType, configuredType); ok {
+				ExtendBasicType(fieldValue, unpackedValue, Append)
+			}
+			if len(ctx.errs) >= maxUnpackErrors {
+				return
+			}
+		} else if isStruct(fieldValue.Type()) {
 			if property.Value.Eval().Type() != parser.MapType {
 				ctx.addError(&UnpackError{
 					fmt.Errorf("can't assign %s value to map property %q",
@@ -321,7 +332,6 @@ func (ctx *unpackContext) unpackToStruct(namePrefix string, structValue reflect.
 			if len(ctx.errs) >= maxUnpackErrors {
 				return
 			}
-
 		} else {
 			unpackedValue, err := propertyToValue(fieldValue.Type(), property)
 			if err != nil && !ctx.addError(err) {
@@ -332,16 +342,180 @@ func (ctx *unpackContext) unpackToStruct(namePrefix string, structValue reflect.
 	}
 }
 
+// Converts the given property to a pointer to a configurable struct
+func (ctx *unpackContext) unpackToConfigurable(propertyName string, property *parser.Property, configurableType, configuredType reflect.Type) (reflect.Value, bool) {
+	switch v := property.Value.(type) {
+	case *parser.String:
+		if configuredType.Kind() != reflect.String {
+			ctx.addError(&UnpackError{
+				fmt.Errorf("can't assign string value to configurable %s property %q",
+					configuredType.String(), property.Name),
+				property.Value.Pos(),
+			})
+			return reflect.New(configurableType), false
+		}
+		result := Configurable[string]{
+			propertyName: property.Name,
+			typ:          parser.SelectTypeUnconfigured,
+			cases: map[string]string{
+				default_select_branch_name: v.Value,
+			},
+			appendWrapper: &appendWrapper[string]{},
+		}
+		return reflect.ValueOf(&result), true
+	case *parser.Bool:
+		if configuredType.Kind() != reflect.Bool {
+			ctx.addError(&UnpackError{
+				fmt.Errorf("can't assign bool value to configurable %s property %q",
+					configuredType.String(), property.Name),
+				property.Value.Pos(),
+			})
+			return reflect.New(configurableType), false
+		}
+		result := Configurable[bool]{
+			propertyName: property.Name,
+			typ:          parser.SelectTypeUnconfigured,
+			cases: map[string]bool{
+				default_select_branch_name: v.Value,
+			},
+			appendWrapper: &appendWrapper[bool]{},
+		}
+		return reflect.ValueOf(&result), true
+	case *parser.List:
+		if configuredType.Kind() != reflect.Slice {
+			ctx.addError(&UnpackError{
+				fmt.Errorf("can't assign list value to configurable %s property %q",
+					configuredType.String(), property.Name),
+				property.Value.Pos(),
+			})
+			return reflect.New(configurableType), false
+		}
+		switch configuredType.Elem().Kind() {
+		case reflect.String:
+			var cases map[string][]string
+			if v.Values != nil {
+				cases = map[string][]string{default_select_branch_name: make([]string, 0, len(v.Values))}
+				itemProperty := &parser.Property{NamePos: property.NamePos, ColonPos: property.ColonPos}
+				for i, expr := range v.Values {
+					itemProperty.Name = propertyName + "[" + strconv.Itoa(i) + "]"
+					itemProperty.Value = expr
+					exprUnpacked, err := propertyToValue(configuredType.Elem(), itemProperty)
+					if err != nil {
+						ctx.addError(err)
+						return reflect.ValueOf(Configurable[[]string]{}), false
+					}
+					cases[default_select_branch_name] = append(cases[default_select_branch_name], exprUnpacked.Interface().(string))
+				}
+			}
+			result := Configurable[[]string]{
+				propertyName:  property.Name,
+				typ:           parser.SelectTypeUnconfigured,
+				cases:         cases,
+				appendWrapper: &appendWrapper[[]string]{},
+			}
+			return reflect.ValueOf(&result), true
+		default:
+			panic("This should be unreachable because ConfigurableElements only accepts slices of strings")
+		}
+	case *parser.Operator:
+		property.Value = v.Value.Eval()
+		return ctx.unpackToConfigurable(propertyName, property, configurableType, configuredType)
+	case *parser.Select:
+		resultPtr := reflect.New(configurableType)
+		result := resultPtr.Elem()
+		cases := reflect.MakeMapWithSize(reflect.MapOf(reflect.TypeOf(""), configuredType), len(v.Cases))
+		for i, c := range v.Cases {
+			switch configuredType.Kind() {
+			case reflect.String, reflect.Bool:
+				p := &parser.Property{
+					Name:    property.Name + "[" + strconv.Itoa(i) + "]",
+					NamePos: c.ColonPos,
+					Value:   c.Value,
+				}
+				val, err := propertyToValue(configuredType, p)
+				if err != nil {
+					ctx.addError(&UnpackError{
+						err,
+						c.Value.Pos(),
+					})
+					return reflect.New(configurableType), false
+				}
+				cases.SetMapIndex(reflect.ValueOf(c.Pattern.Value), val)
+			case reflect.Slice:
+				if configuredType.Elem().Kind() != reflect.String {
+					panic("This should be unreachable because ConfigurableElements only accepts slices of strings")
+				}
+				p := &parser.Property{
+					Name:    property.Name + "[" + strconv.Itoa(i) + "]",
+					NamePos: c.ColonPos,
+					Value:   c.Value,
+				}
+				val, ok := ctx.unpackToSlice(p.Name, p, configuredType)
+				if !ok {
+					return reflect.New(configurableType), false
+				}
+				cases.SetMapIndex(reflect.ValueOf(c.Pattern.Value), val)
+			default:
+				panic("This should be unreachable because ConfigurableElements only accepts strings, boools, or slices of strings")
+			}
+		}
+		resultPtr.Interface().(configurablePtrReflection).initialize(
+			property.Name,
+			v.Typ,
+			v.Condition.Value,
+			cases.Interface(),
+		)
+		if v.Append != nil {
+			p := &parser.Property{
+				Name:    property.Name,
+				NamePos: property.NamePos,
+				Value:   v.Append,
+			}
+			val, ok := ctx.unpackToConfigurable(propertyName, p, configurableType, configuredType)
+			if !ok {
+				return reflect.New(configurableType), false
+			}
+			result.Interface().(configurableReflection).setAppend(val.Elem().Interface())
+		}
+		return resultPtr, true
+	default:
+		ctx.addError(&UnpackError{
+			fmt.Errorf("can't assign %s value to configurable %s property %q",
+				property.Value.Type(), configuredType.String(), property.Name),
+			property.Value.Pos(),
+		})
+		return reflect.New(configurableType), false
+	}
+}
+
+func (ctx *unpackContext) reportSelectOnNonConfigurablePropertyError(
+	property *parser.Property,
+) bool {
+	if _, ok := property.Value.Eval().(*parser.Select); !ok {
+		return false
+	}
+
+	ctx.addError(&UnpackError{
+		fmt.Errorf("can't assign select statement to non-configurable property %q. This requires a small soong change to enable in most cases, please file a go/soong-bug if you'd like to use a select statement here",
+			property.Name),
+		property.Value.Pos(),
+	})
+
+	return true
+}
+
 // unpackSlice creates a value of a given slice type from the property which should be a list
 func (ctx *unpackContext) unpackToSlice(
 	sliceName string, property *parser.Property, sliceType reflect.Type) (reflect.Value, bool) {
 	propValueAsList, ok := property.Value.Eval().(*parser.List)
 	if !ok {
-		ctx.addError(&UnpackError{
-			fmt.Errorf("can't assign %s value to list property %q",
-				property.Value.Type(), property.Name),
-			property.Value.Pos(),
-		})
+		if !ctx.reportSelectOnNonConfigurablePropertyError(property) {
+			ctx.addError(&UnpackError{
+				fmt.Errorf("can't assign %s value to list property %q",
+					property.Value.Type(), property.Name),
+				property.Value.Pos(),
+			})
+		}
 		return reflect.MakeSlice(sliceType, 0, 0), false
 	}
 	exprs := propValueAsList.Values

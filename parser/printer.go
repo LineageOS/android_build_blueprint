@@ -131,8 +131,72 @@ func (p *printer) printExpression(value Expression) {
 		p.printList(v.Values, v.LBracePos, v.RBracePos)
 	case *Map:
 		p.printMap(v)
+	case *Select:
+		p.printSelect(v)
 	default:
 		panic(fmt.Errorf("bad property type: %s", value.Type()))
+	}
+}
+
+func (p *printer) printSelect(s *Select) {
+	if len(s.Cases) == 0 {
+		return
+	}
+	if len(s.Cases) == 1 && s.Cases[0].Pattern.Value == "__soong_conditions_default__" {
+		p.printExpression(s.Cases[0].Value)
+		return
+	}
+	p.requestSpace()
+	p.printToken("select(", s.KeywordPos)
+	switch s.Typ {
+	case SelectTypeSoongConfigVariable:
+		p.printToken("soong_config_variable(", s.Condition.LiteralPos)
+		parts := strings.Split(s.Condition.Value, ":")
+		namespace := parts[0]
+		variable := parts[1]
+		p.printToken(strconv.Quote(namespace), s.Condition.LiteralPos)
+		p.printToken(",", s.Condition.LiteralPos)
+		p.requestSpace()
+		p.printToken(strconv.Quote(variable), s.Condition.LiteralPos)
+		p.printToken(")", s.Condition.LiteralPos)
+	case SelectTypeReleaseVariable:
+		p.printToken("release_variable(", s.Condition.LiteralPos)
+		p.printToken(strconv.Quote(s.Condition.Value), s.Condition.LiteralPos)
+		p.printToken(")", s.Condition.LiteralPos)
+	case SelectTypeProductVariable:
+		p.printToken("product_variable(", s.Condition.LiteralPos)
+		p.printToken(strconv.Quote(s.Condition.Value), s.Condition.LiteralPos)
+		p.printToken(")", s.Condition.LiteralPos)
+	case SelectTypeVariant:
+		p.printToken("variant(", s.Condition.LiteralPos)
+		p.printToken(strconv.Quote(s.Condition.Value), s.Condition.LiteralPos)
+		p.printToken(")", s.Condition.LiteralPos)
+	default:
+		panic("should be unreachable")
+	}
+	p.printToken(", {", s.LBracePos)
+	p.requestNewline()
+	p.indent(p.curIndent() + 4)
+	for _, c := range s.Cases {
+		p.requestNewline()
+		if c.Pattern.Value != "__soong_conditions_default__" {
+			p.printToken(strconv.Quote(c.Pattern.Value), c.Pattern.LiteralPos)
+		} else {
+			p.printToken("_", c.Pattern.LiteralPos)
+		}
+		p.printToken(":", c.ColonPos)
+		p.requestSpace()
+		p.printExpression(c.Value)
+		p.printToken(",", c.Value.Pos())
+	}
+	p.requestNewline()
+	p.unindent(s.RBracePos)
+	p.printToken("})", s.RBracePos)
+	if s.Append != nil {
+		p.requestSpace()
+		p.printToken("+", s.RBracePos)
+		p.requestSpace()
+		p.printExpression(s.Append)
 	}
 }
 

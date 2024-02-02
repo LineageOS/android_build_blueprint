@@ -20,6 +20,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/google/blueprint/parser"
 )
 
 type appendPropertyTestCase struct {
@@ -1253,6 +1255,91 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 				return true, fmt.Errorf("filter error")
 			},
 			err: extendPropertyErrorf("s", "filter error"),
+		},
+		{
+			name: "Append configurable",
+			dst: &struct{ S Configurable[[]string] }{
+				S: Configurable[[]string]{
+					typ:       parser.SelectTypeSoongConfigVariable,
+					condition: "foo",
+					cases: map[string][]string{
+						"a": {"1", "2"},
+					},
+					appendWrapper: &appendWrapper[[]string]{},
+				},
+			},
+			src: &struct{ S Configurable[[]string] }{
+				S: Configurable[[]string]{
+					typ:       parser.SelectTypeReleaseVariable,
+					condition: "bar",
+					cases: map[string][]string{
+						"b": {"3", "4"},
+					},
+					appendWrapper: &appendWrapper[[]string]{},
+				},
+			},
+			out: &struct{ S Configurable[[]string] }{
+				S: Configurable[[]string]{
+					typ:       parser.SelectTypeSoongConfigVariable,
+					condition: "foo",
+					cases: map[string][]string{
+						"a": {"1", "2"},
+					},
+					appendWrapper: &appendWrapper[[]string]{
+						append: Configurable[[]string]{
+							typ:       parser.SelectTypeReleaseVariable,
+							condition: "bar",
+							cases: map[string][]string{
+								"b": {"3", "4"},
+							},
+							appendWrapper: &appendWrapper[[]string]{},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:  "Prepend configurable",
+			order: Prepend,
+			dst: &struct{ S Configurable[[]string] }{
+				S: Configurable[[]string]{
+					typ:       parser.SelectTypeSoongConfigVariable,
+					condition: "foo",
+					cases: map[string][]string{
+						"a": {"1", "2"},
+					},
+					appendWrapper: &appendWrapper[[]string]{},
+				},
+			},
+			src: &struct{ S Configurable[[]string] }{
+				S: Configurable[[]string]{
+					typ:       parser.SelectTypeReleaseVariable,
+					condition: "bar",
+					cases: map[string][]string{
+						"b": {"3", "4"},
+					},
+					appendWrapper: &appendWrapper[[]string]{},
+				},
+			},
+			out: &struct{ S Configurable[[]string] }{
+				S: Configurable[[]string]{
+					typ:       parser.SelectTypeReleaseVariable,
+					condition: "bar",
+					cases: map[string][]string{
+						"b": {"3", "4"},
+					},
+					appendWrapper: &appendWrapper[[]string]{
+						append: Configurable[[]string]{
+							typ:       parser.SelectTypeSoongConfigVariable,
+							condition: "foo",
+							cases: map[string][]string{
+								"a": {"1", "2"},
+							},
+							appendWrapper: &appendWrapper[[]string]{},
+						},
+					},
+				},
+			},
 		},
 	}
 }
