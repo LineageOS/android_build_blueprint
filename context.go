@@ -3820,6 +3820,25 @@ func (c *Context) visitAllModuleVariants(module *moduleInfo,
 	}
 }
 
+func (c *Context) visitAllModuleInfos(visit func(*moduleInfo)) {
+	var module *moduleInfo
+
+	defer func() {
+		if r := recover(); r != nil {
+			panic(newPanicErrorf(r, "VisitAllModules(%s) for %s",
+				funcName(visit), module))
+		}
+	}()
+
+	for _, moduleGroup := range c.sortedModuleGroups() {
+		for _, moduleOrAlias := range moduleGroup.modules {
+			if module = moduleOrAlias.module(); module != nil {
+				visit(module)
+			}
+		}
+	}
+}
+
 func (c *Context) requireNinjaVersion(major, minor, micro int) {
 	if major != 1 {
 		panic("ninja version with major version != 1 not supported")
@@ -4918,6 +4937,126 @@ func (p *panicError) addIn(in string) {
 
 func funcName(f interface{}) string {
 	return runtime.FuncForPC(reflect.ValueOf(f).Pointer()).Name()
+}
+
+// json representation of a dependency
+type depJson struct {
+	Name    string `json:"name"`
+	Variant string `json:"variant"`
+	TagType string `json:"tag_type"`
+}
+
+// json representation of a provider
+type providerJson struct {
+	Type  string `json:"type"`
+	Debug string `json:"debug"` // from GetDebugString on the provider data
+}
+
+// interface for getting debug info from various data.
+// TODO: Consider having this return a json object instead
+type Debuggable interface {
+	GetDebugString() string
+}
+
+// Get the debug json for a single module. Returns thae data as
+// flattened json text for easy concatenation by GenerateModuleDebugInfo.
+func getModuleDebugJson(module *moduleInfo) []byte {
+	info := struct {
+		Name       string         `json:"name"`
+		SourceFile string         `json:"source_file"`
+		SourceLine int            `json:"source_line"`
+		Type       string         `json:"type"`
+		Variant    string         `json:"variant"`
+		Deps       []depJson      `json:"deps"`
+		Providers  []providerJson `json:"providers"`
+		Debug      string         `json:"debug"` // from GetDebugString on the module
+	}{
+		Name:       module.logicModule.Name(),
+		SourceFile: module.pos.Filename,
+		SourceLine: module.pos.Line,
+		Type:       module.typeName,
+		Variant:    module.variant.name,
+		Deps: func() []depJson {
+			result := make([]depJson, len(module.directDeps))
+			for i, dep := range module.directDeps {
+				result[i] = depJson{
+					Name:    dep.module.logicModule.Name(),
+					Variant: dep.module.variant.name,
+				}
+				t := reflect.TypeOf(dep.tag)
+				if t != nil {
+					result[i].TagType = t.PkgPath() + "." + t.Name()
+				}
+			}
+			return result
+		}(),
+		Providers: func() []providerJson {
+			result := make([]providerJson, 0, len(module.providers))
+			for _, p := range module.providers {
+				pj := providerJson{}
+				include := false
+
+				t := reflect.TypeOf(p)
+				if t != nil {
+					pj.Type = t.PkgPath() + "." + t.Name()
+					include = true
+				}
+
+				if dbg, ok := p.(Debuggable); ok {
+					pj.Debug = dbg.GetDebugString()
+					if pj.Debug != "" {
+						include = true
+					}
+				}
+				if include {
+					result = append(result, pj)
+				}
+			}
+			return result
+		}(),
+		Debug: func() string {
+			if dbg, ok := module.logicModule.(Debuggable); ok {
+				return dbg.GetDebugString()
+			} else {
+				return ""
+			}
+		}(),
+	}
+	buf, _ := json.Marshal(info)
+	return buf
+}
+
+// Generate out/soong/soong-debug-info.json Called if GENERATE_SOONG_DEBUG=true.
+func (this *Context) GenerateModuleDebugInfo(filename string) {
+	err := os.MkdirAll(filepath.Dir(filename), 0777)
+	if err != nil {
+		// We expect this to be writable
+		panic(fmt.Sprintf("couldn't create directory for soong module debug file %s: %s", filepath.Dir(filename), err))
+	}
+
+	f, err := os.Create(filename)
+	if err != nil {
+		// We expect this to be writable
+		panic(fmt.Sprintf("couldn't create soong module debug file %s: %s", filename, err))
+	}
+	defer f.Close()
+
+	needComma := false
+	f.WriteString("{\n\"modules\": [\n")
+
+	// TODO: Optimize this (parallel execution, etc) if it gets slow.
+	this.visitAllModuleInfos(func(module *moduleInfo) {
+		if needComma {
+			f.WriteString(",\n")
+		} else {
+			needComma = true
+		}
+
+		moduleData := getModuleDebugJson(module)
+		f.Write(moduleData)
+	})
+
+	f.WriteString("\n]\n}")
 }
 
 var fileHeaderTemplate = `******************************************************************************
