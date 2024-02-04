@@ -40,6 +40,9 @@ type Args struct {
 	Cpuprofile string
 	Memprofile string
 	TraceFile  string
+
+	// Debug data json file
+	ModuleDebugFile string
 }
 
 // RegisterGoModuleTypes adds module types to build tools written in golang
@@ -129,6 +132,10 @@ func RunBlueprint(args Args, stopBefore StopBefore, ctx *blueprint.Context, conf
 		return nil, fatalErrors(errs)
 	} else {
 		ninjaDeps = append(ninjaDeps, buildActionsDeps...)
+	}
+
+	if args.ModuleDebugFile != "" {
+		ctx.GenerateModuleDebugInfo(args.ModuleDebugFile)
 	}
 
 	if stopBefore == StopBeforeWriteNinja {
