@@ -1168,9 +1168,7 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 			out: &struct{ S string }{
 				S: "string1string2",
 			},
-			filter: func(property string,
-				dstField, srcField reflect.StructField,
-				dstValue, srcValue interface{}) (bool, error) {
+			filter: func(dstField, srcField reflect.StructField) (bool, error) {
 				return true, nil
 			},
 		},
@@ -1185,9 +1183,7 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 			out: &struct{ S string }{
 				S: "string1",
 			},
-			filter: func(property string,
-				dstField, srcField reflect.StructField,
-				dstValue, srcValue interface{}) (bool, error) {
+			filter: func(dstField, srcField reflect.StructField) (bool, error) {
 				return false, nil
 			},
 		},
@@ -1202,12 +1198,8 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 			out: &struct{ S string }{
 				S: "string1string2",
 			},
-			filter: func(property string,
-				dstField, srcField reflect.StructField,
-				dstValue, srcValue interface{}) (bool, error) {
-				return property == "s" &&
-					dstField.Name == "S" && srcField.Name == "S" &&
-					dstValue.(string) == "string1" && srcValue.(string) == "string2", nil
+			filter: func(dstField, srcField reflect.StructField) (bool, error) {
+				return dstField.Name == "S" && srcField.Name == "S", nil
 			},
 		},
 		{
@@ -1257,9 +1249,7 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 			out: &struct{ S string }{
 				S: "string1",
 			},
-			filter: func(property string,
-				dstField, srcField reflect.StructField,
-				dstValue, srcValue interface{}) (bool, error) {
+			filter: func(dstField, srcField reflect.StructField) (bool, error) {
 				return true, fmt.Errorf("filter error")
 			},
 			err: extendPropertyErrorf("s", "filter error"),
@@ -1300,9 +1290,7 @@ func TestExtendProperties(t *testing.T) {
 			var err error
 			var testType string
 
-			order := func(property string,
-				dstField, srcField reflect.StructField,
-				dstValue, srcValue interface{}) (Order, error) {
+			order := func(dstField, srcField reflect.StructField) (Order, error) {
 				switch testCase.order {
 				case Append:
 					return Append, nil
@@ -1764,9 +1752,7 @@ func TestExtendMatchingProperties(t *testing.T) {
 			var err error
 			var testType string
 
-			order := func(property string,
-				dstField, srcField reflect.StructField,
-				dstValue, srcValue interface{}) (Order, error) {
+			order := func(dstField, srcField reflect.StructField) (Order, error) {
 				switch testCase.order {
 				case Append:
 					return Append, nil
