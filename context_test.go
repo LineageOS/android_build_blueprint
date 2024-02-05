@@ -18,8 +18,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -1174,17 +1176,22 @@ func TestDeduplicateOrderOnlyDeps(t *testing.T) {
 		expectedPhonys []*buildDef
 		conversions    map[string][]string
 	}
+	fnvHash := func(s string) string {
+		hash := fnv.New64a()
+		hash.Write([]byte(s))
+		return strconv.FormatUint(hash.Sum64(), 16)
+	}
 	testCases := []testcase{{
 		modules: []*moduleInfo{
 			m(b("A", nil, []string{"d"})),
 			m(b("B", nil, []string{"d"})),
 		},
 		expectedPhonys: []*buildDef{
-			b("dedup-GKw-c0PwFokMUQ6T-TUmEWnZ4_VlQ2Qpgw-vCTT0-OQ", []string{"d"}, nil),
+			b("dedup-"+fnvHash("d"), []string{"d"}, nil),
 		},
 		conversions: map[string][]string{
-			"A": []string{"dedup-GKw-c0PwFokMUQ6T-TUmEWnZ4_VlQ2Qpgw-vCTT0-OQ"},
-			"B": []string{"dedup-GKw-c0PwFokMUQ6T-TUmEWnZ4_VlQ2Qpgw-vCTT0-OQ"},
+			"A": []string{"dedup-" + fnvHash("d")},
+			"B": []string{"dedup-" + fnvHash("d")},
 		},
 	}, {
 		modules: []*moduleInfo{
@@ -1197,11 +1204,11 @@ func TestDeduplicateOrderOnlyDeps(t *testing.T) {
 			m(b("B", nil, []string{"b"})),
 			m(b("C", nil, []string{"a"})),
 		},
-		expectedPhonys: []*buildDef{b("dedup-ypeBEsobvcr6wjGzmiPcTaeG7_gUfE5yuYB3ha_uSLs", []string{"a"}, nil)},
+		expectedPhonys: []*buildDef{b("dedup-"+fnvHash("a"), []string{"a"}, nil)},
 		conversions: map[string][]string{
-			"A": []string{"dedup-ypeBEsobvcr6wjGzmiPcTaeG7_gUfE5yuYB3ha_uSLs"},
+			"A": []string{"dedup-" + fnvHash("a")},
 			"B": []string{"b"},
-			"C": []string{"dedup-ypeBEsobvcr6wjGzmiPcTaeG7_gUfE5yuYB3ha_uSLs"},
+			"C": []string{"dedup-" + fnvHash("a")},
 		},
 	}, {
 		modules: []*moduleInfo{
@@ -1211,13 +1218,13 @@ func TestDeduplicateOrderOnlyDeps(t *testing.T) {
 				b("D", nil, []string{"a", "c"})),
 		},
 		expectedPhonys: []*buildDef{
-			b("dedup--44g_C5MPySMYMOb1lLzwTRymLuXe4tNWQO4UFViBgM", []string{"a", "b"}, nil),
-			b("dedup-9F3lHN7zCZFVHkHogt17VAR5lkigoAdT9E_JZuYVP8E", []string{"a", "c"}, nil)},
+			b("dedup-"+fnvHash("ab"), []string{"a", "b"}, nil),
+			b("dedup-"+fnvHash("ac"), []string{"a", "c"}, nil)},
 		conversions: map[string][]string{
-			"A": []string{"dedup--44g_C5MPySMYMOb1lLzwTRymLuXe4tNWQO4UFViBgM"},
-			"B": []string{"dedup--44g_C5MPySMYMOb1lLzwTRymLuXe4tNWQO4UFViBgM"},
-			"C": []string{"dedup-9F3lHN7zCZFVHkHogt17VAR5lkigoAdT9E_JZuYVP8E"},
-			"D": []string{"dedup-9F3lHN7zCZFVHkHogt17VAR5lkigoAdT9E_JZuYVP8E"},
+			"A": []string{"dedup-" + fnvHash("ab")},
+			"B": []string{"dedup-" + fnvHash("ab")},
+			"C": []string{"dedup-" + fnvHash("ac")},
+			"D": []string{"dedup-" + fnvHash("ac")},
 		},
 	}}
 	for index, tc := range testCases {
