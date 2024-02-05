@@ -18,11 +18,10 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"io/ioutil"
 	"os"
@@ -37,6 +36,7 @@ import (
 	"sync/atomic"
 	"text/scanner"
 	"text/template"
+	"unsafe"
 
 	"github.com/google/blueprint/metrics"
 	"github.com/google/blueprint/parser"
@@ -4729,60 +4729,73 @@ func (c *Context) SetBeforePrepareBuildActionsHook(hookFn func() error) {
 // to be extracted as a phony output
 type phonyCandidate struct {
 	sync.Once
-	phony *buildDef // the phony buildDef that wraps the set
-	first *buildDef // the first buildDef that uses this set
+	phony            *buildDef      // the phony buildDef that wraps the set
+	first            *buildDef      // the first buildDef that uses this set
+	orderOnlyStrings []string       // the original OrderOnlyStrings of the first buildDef that uses this set
+	orderOnly        []*ninjaString // the original OrderOnly of the first buildDef that uses this set
 }
 
 // keyForPhonyCandidate gives a unique identifier for a set of deps.
 // If any of the deps use a variable, we return an empty string to signal
 // that this set of deps is ineligible for extraction.
-func keyForPhonyCandidate(deps []*ninjaString, stringDeps []string) string {
-	hasher := sha256.New()
+func keyForPhonyCandidate(deps []*ninjaString, stringDeps []string) uint64 {
+	hasher := fnv.New64a()
+	write := func(s string) {
+		// The hasher doesn't retain or modify the input slice, so pass the string data directly to avoid
+		// an extra allocation and copy.
+		_, err := hasher.Write(unsafe.Slice(unsafe.StringData(s), len(s)))
+		if err != nil {
+			panic(fmt.Errorf("write failed: %w", err))
+		}
+	}
 	for _, d := range deps {
 		if len(d.Variables()) != 0 {
-			return ""
+			return 0
 		}
-		io.WriteString(hasher, d.Value(nil))
+		write(d.Value(nil))
 	}
 	for _, d := range stringDeps {
-		io.WriteString(hasher, d)
+		write(d)
 	}
-	return base64.RawURLEncoding.EncodeToString(hasher.Sum(nil))
+	return hasher.Sum64()
 }
 
 // scanBuildDef is called for every known buildDef `b` that has a non-empty `b.OrderOnly`.
 // If `b.OrderOnly` is not present in `candidates`, it gets stored.
 // But if `b.OrderOnly` already exists in `candidates`, then `b.OrderOnly`
 // (and phonyCandidate#first.OrderOnly) will be replaced with phonyCandidate#phony.Outputs
-func scanBuildDef(wg *sync.WaitGroup, candidates *sync.Map, phonyCount *atomic.Uint32, b *buildDef) {
-	defer wg.Done()
+func scanBuildDef(candidates *sync.Map, b *buildDef) {
 	key := keyForPhonyCandidate(b.OrderOnly, b.OrderOnlyStrings)
-	if key == "" {
+	if key == 0 {
 		return
 	}
 	if v, loaded := candidates.LoadOrStore(key, &phonyCandidate{
-		first: b,
+		first:            b,
+		orderOnly:        b.OrderOnly,
+		orderOnlyStrings: b.OrderOnlyStrings,
 	}); loaded {
 		m := v.(*phonyCandidate)
-		m.Do(func() {
-			// this is the second occurrence and hence it makes sense to
-			// extract it as a phony output
-			phonyCount.Add(1)
-			m.phony = &buildDef{
-				Rule:          Phony,
-				OutputStrings: []string{"dedup-" + key},
-				Inputs:        m.first.OrderOnly, //we could also use b.OrderOnly
-				InputStrings:  m.first.OrderOnlyStrings,
-				Optional:      true,
-			}
-			// the previously recorded build-def, which first had these deps as its
-			// order-only deps, should now use this phony output instead
-			m.first.OrderOnlyStrings = m.phony.OutputStrings
-			m.first.OrderOnly = nil
-			m.first = nil
-		})
-		b.OrderOnlyStrings = m.phony.OutputStrings
-		b.OrderOnly = nil
+		if slices.EqualFunc(m.orderOnly, b.OrderOnly, ninjaStringsEqual) &&
+			slices.Equal(m.orderOnlyStrings, b.OrderOnlyStrings) {
+			m.Do(func() {
+				// this is the second occurrence and hence it makes sense to
+				// extract it as a phony output
+				m.phony = &buildDef{
+					Rule:          Phony,
+					OutputStrings: []string{fmt.Sprintf("dedup-%x", key)},
+					Inputs:        m.first.OrderOnly, //we could also use b.OrderOnly
+					InputStrings:  m.first.OrderOnlyStrings,
+					Optional:      true,
+				}
+				// the previously recorded build-def, which first had these deps as its
+				// order-only deps, should now use this phony output instead
+				m.first.OrderOnlyStrings = m.phony.OutputStrings
+				m.first.OrderOnly = nil
+				m.first = nil
+			})
+			b.OrderOnlyStrings = m.phony.OutputStrings
+			b.OrderOnly = nil
+		}
 	}
 }
 
@@ -4790,25 +4803,23 @@ func scanBuildDef(wg *sync.WaitGroup, candidates *sync.Map, phonyCount *atomic.U
 // buildDef instances in the provided moduleInfo instances. Each such
 // common set forms a new buildDef representing a phony output that then becomes
 // the sole order-only dependency of those buildDef instances
-func (c *Context) deduplicateOrderOnlyDeps(infos []*moduleInfo) *localBuildActions {
+func (c *Context) deduplicateOrderOnlyDeps(modules []*moduleInfo) *localBuildActions {
 	c.BeginEvent("deduplicate_order_only_deps")
 	defer c.EndEvent("deduplicate_order_only_deps")
 
 	candidates := sync.Map{} //used as map[key]*candidate
-	phonyCount := atomic.Uint32{}
-	wg := sync.WaitGroup{}
-	for _, info := range infos {
-		for _, b := range info.actionDefs.buildDefs {
-			if len(b.OrderOnly) > 0 || len(b.OrderOnlyStrings) > 0 {
-				wg.Add(1)
-				go scanBuildDef(&wg, &candidates, &phonyCount, b)
+	parallelVisit(modules, unorderedVisitorImpl{}, parallelVisitLimit,
+		func(m *moduleInfo, pause chan<- pauseSpec) bool {
+			for _, b := range m.actionDefs.buildDefs {
+				if len(b.OrderOnly) > 0 || len(b.OrderOnlyStrings) > 0 {
+					scanBuildDef(&candidates, b)
+				}
 			}
-		}
-	}
-	wg.Wait()
+			return false
+		})
 
 	// now collect all created phonys to return
-	phonys := make([]*buildDef, 0, phonyCount.Load())
+	var phonys []*buildDef
 	candidates.Range(func(_ any, v any) bool {
 		candidate := v.(*phonyCandidate)
 		if candidate.phony != nil {

@@ -19,7 +19,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/maphash"
-	"io"
 	"math"
 	"reflect"
 	"sort"
@@ -44,7 +43,7 @@ func HashProvider(provider interface{}) (uint64, error) {
 	return hasher.Sum64(), err
 }
 
-func hashProviderInternal(hasher io.Writer, v reflect.Value, ptrs map[uintptr]bool) error {
+func hashProviderInternal(hasher *maphash.Hash, v reflect.Value, ptrs map[uintptr]bool) error {
 	var int64Array [8]byte
 	int64Buf := int64Array[:]
 	binary.LittleEndian.PutUint64(int64Buf, uint64(v.Kind()))
@@ -129,7 +128,7 @@ func hashProviderInternal(hasher io.Writer, v reflect.Value, ptrs map[uintptr]bo
 			}
 		}
 	case reflect.String:
-		hasher.Write([]byte(v.String()))
+		hasher.WriteString(v.String())
 	case reflect.Bool:
 		if v.Bool() {
 			int64Buf[0] = 1
