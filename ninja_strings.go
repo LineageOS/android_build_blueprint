@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 )
 
@@ -476,4 +477,11 @@ func validateArgNames(argNames []string) error {
 	}
 
 	return nil
+}
+
+func ninjaStringsEqual(a, b *ninjaString) bool {
+	return a.str == b.str &&
+		(a.variables == nil) == (b.variables == nil) &&
+		(a.variables == nil ||
+			slices.Equal(*a.variables, *b.variables))
 }
