@@ -4955,16 +4955,17 @@ func funcName(f interface{}) string {
 
 // json representation of a dependency
 type depJson struct {
-	Name    string `json:"name"`
-	Variant string `json:"variant"`
-	TagType string `json:"tag_type,omitempty"`
+	Name    string      `json:"name"`
+	Variant string      `json:"variant"`
+	TagType string      `json:"tag_type"`
+	TagData interface{} `json:"tag_data"`
 }
 
 // json representation of a provider
 type providerJson struct {
-	Type   string      `json:"type,omitempty"`
-	Debug  string      `json:"debug,omitempty"` // from GetDebugString on the provider data
-	Fields interface{} `json:"fields,omitempty"`
+	Type   string      `json:"type"`
+	Debug  string      `json:"debug"` // from GetDebugString on the provider data
+	Fields interface{} `json:"fields"`
 }
 
 // interface for getting debug info from various data.
@@ -5090,6 +5091,7 @@ func getModuleDebugJson(module *moduleInfo) []byte {
 				t := reflect.TypeOf(dep.tag)
 				if t != nil {
 					result[i].TagType = t.PkgPath() + "." + t.Name()
+					result[i].TagData = debugPropertyMap(reflect.ValueOf(dep.tag))
 				}
 			}
 			return result
