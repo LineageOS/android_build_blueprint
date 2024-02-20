@@ -4975,20 +4975,41 @@ type Debuggable interface {
 }
 
 // Convert a slice in a reflect.Value to a value suitable for outputting to json
-func debugPropertySlice(value reflect.Value) interface{} {
+func debugSlice(value reflect.Value) interface{} {
 	size := value.Len()
 	if size == 0 {
 		return nil
 	}
 	result := make([]interface{}, size)
 	for i := 0; i < size; i++ {
-		result[i] = debugPropertyValue(value.Index(i))
+		result[i] = debugValue(value.Index(i))
 	}
 	return result
 }
 
+// Convert a map in a reflect.Value to a value suitable for outputting to json
+func debugMap(value reflect.Value) interface{} {
+	if value.IsNil() {
+		return nil
+	}
+	result := make(map[string]interface{})
+	iter := value.MapRange()
+	for iter.Next() {
+		// In the (hopefully) rare case of a key collision (which will happen when multiple
+		// go-typed keys have the same string representation, we'll just overwrite the last
+		// value.
+		result[debugKey(iter.Key())] = debugValue(iter.Value())
+	}
+	return result
+}
+
+// Convert a value into a string, suitable for being a json map key.
+func debugKey(value reflect.Value) string {
+	return fmt.Sprintf("%v", value)
+}
+
 // Convert a single value (possibly a map or slice too) in a reflect.Value to a value suitable for outputting to json
-func debugPropertyValue(value reflect.Value) interface{} {
+func debugValue(value reflect.Value) interface{} {
 	// Dereference pointers down to the real type
 	for value.Kind() == reflect.Ptr {
 		// If it's nil, return nil
@@ -5007,9 +5028,11 @@ func debugPropertyValue(value reflect.Value) interface{} {
 	case reflect.Bool, reflect.String, reflect.Int, reflect.Uint:
 		return value.Interface()
 	case reflect.Slice:
-		return debugPropertySlice(value)
+		return debugSlice(value)
 	case reflect.Struct:
-		return debugPropertyMap(value)
+		return debugStruct(value)
+	case reflect.Map:
+		return debugMap(value)
 	case reflect.Interface:
 		// ???
 	default:
@@ -5020,9 +5043,9 @@ func debugPropertyValue(value reflect.Value) interface{} {
 }
 
 // Convert an object in a reflect.Value to a value suitable for outputting to json
-func debugPropertyMap(value reflect.Value) interface{} {
+func debugStruct(value reflect.Value) interface{} {
 	result := make(map[string]interface{})
-	debugPropertyMapAppend(value, &result)
+	debugStructAppend(value, &result)
 	if len(result) == 0 {
 		return nil
 	}
@@ -5030,7 +5053,7 @@ func debugPropertyMap(value reflect.Value) interface{} {
 }
 
 // Convert an object to a value suiable for outputting to json
-func debugPropertyMapAppend(value reflect.Value, result *map[string]interface{}) {
+func debugStructAppend(value reflect.Value, result *map[string]interface{}) {
 	for value.Kind() == reflect.Ptr {
 		if value.IsNil() {
 			return
@@ -5048,7 +5071,7 @@ func debugPropertyMapAppend(value reflect.Value, result *map[string]interface{})
 
 	structType := value.Type()
 	for i := 0; i < value.NumField(); i++ {
-		v := debugPropertyValue(value.Field(i))
+		v := debugValue(value.Field(i))
 		if v != nil {
 			(*result)[structType.Field(i).Name] = v
 		}
@@ -5059,7 +5082,7 @@ func debugPropertyStruct(props interface{}, result *map[string]interface{}) {
 	if props == nil {
 		return
 	}
-	debugPropertyMapAppend(reflect.ValueOf(props), result)
+	debugStructAppend(reflect.ValueOf(props), result)
 }
 
 // Get the debug json for a single module. Returns thae data as
@@ -5091,7 +5114,7 @@ func getModuleDebugJson(module *moduleInfo) []byte {
 				t := reflect.TypeOf(dep.tag)
 				if t != nil {
 					result[i].TagType = t.PkgPath() + "." + t.Name()
-					result[i].TagData = debugPropertyMap(reflect.ValueOf(dep.tag))
+					result[i].TagData = debugStruct(reflect.ValueOf(dep.tag))
 				}
 			}
 			return result
@@ -5115,10 +5138,8 @@ func getModuleDebugJson(module *moduleInfo) []byte {
 					}
 				}
 
-				fields := make(map[string]interface{})
-				debugPropertyStruct(p, &fields)
-				if len(fields) > 0 {
-					pj.Fields = fields
+				if p != nil {
+					pj.Fields = debugValue(reflect.ValueOf(p))
 					include = true
 				}
 
