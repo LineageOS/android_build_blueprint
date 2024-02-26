@@ -5010,8 +5010,10 @@ func debugKey(value reflect.Value) string {
 
 // Convert a single value (possibly a map or slice too) in a reflect.Value to a value suitable for outputting to json
 func debugValue(value reflect.Value) interface{} {
+	// Remember if we originally received a reflect.Interface.
+	wasInterface := value.Kind() == reflect.Interface
 	// Dereference pointers down to the real type
-	for value.Kind() == reflect.Ptr {
+	for value.Kind() == reflect.Ptr || value.Kind() == reflect.Interface {
 		// If it's nil, return nil
 		if value.IsNil() {
 			return nil
@@ -5030,13 +5032,17 @@ func debugValue(value reflect.Value) interface{} {
 	case reflect.Slice:
 		return debugSlice(value)
 	case reflect.Struct:
+		// If we originally received an interface, and there is a String() method, call that.
+		// TODO: figure out why Path doesn't work correctly otherwise (in aconfigPropagatingDeclarationsInfo)
+		if s, ok := value.Interface().(interface{ String() string }); wasInterface && ok {
+			return s.String()
+		}
 		return debugStruct(value)
 	case reflect.Map:
 		return debugMap(value)
-	case reflect.Interface:
-		// ???
 	default:
-		// ???
+		// TODO: add cases as we find them.
+		return fmt.Sprintf("debugValue(Kind=%v, wasInterface=%v)", kind, wasInterface)
 	}
 
 	return nil
