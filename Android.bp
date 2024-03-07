@@ -117,6 +117,7 @@ bootstrap_go_package {
     ],
     srcs: [
         "proptools/clone.go",
+        "proptools/configurable.go",
         "proptools/escape.go",
         "proptools/extend.go",
         "proptools/filter.go",

@@ -15,6 +15,7 @@
 package proptools
 
 import (
+	"reflect"
 	"testing"
 )
 
@@ -154,5 +155,44 @@ func TestClearField(t *testing.T) {
 	Clear(&props.c)
 	if props.c.n != 0 {
 		t.Error("struct field is not cleared to zero.")
+	}
+}
+
+func TestIsConfigurable(t *testing.T) {
+	testCases := []struct {
+		name     string
+		value    interface{}
+		expected bool
+	}{
+		{
+			name:     "Configurable string",
+			value:    Configurable[string]{},
+			expected: true,
+		},
+		{
+			name:     "Configurable string list",
+			value:    Configurable[[]string]{},
+			expected: true,
+		},
+		{
+			name:     "Configurable bool",
+			value:    Configurable[bool]{},
+			expected: true,
+		},
+		{
+			name: "Other struct with a bool as the first field",
+			value: struct {
+				x bool
+			}{},
+			expected: false,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			value := reflect.ValueOf(tc.value)
+			if isConfigurable(value.Type()) != tc.expected {
+				t.Errorf("Expected isConfigurable to return %t", tc.expected)
+			}
+		})
 	}
 }

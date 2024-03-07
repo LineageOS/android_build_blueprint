@@ -56,7 +56,7 @@ func propertyIndexesWithTag(t reflect.Type, key, value string) [][]int {
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 		ft := field.Type
-		if isStruct(ft) || isStructPtr(ft) || isSliceOfStruct(ft) {
+		if (isStruct(ft) && !isConfigurable(ft)) || isStructPtr(ft) || isSliceOfStruct(ft) {
 			if ft.Kind() == reflect.Ptr || ft.Kind() == reflect.Slice || ft.Kind() == reflect.Map {
 				ft = ft.Elem()
 			}
