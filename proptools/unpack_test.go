@@ -721,6 +721,146 @@ var validUnpackTestCases = []struct {
 			},
 		},
 	},
+	{
+		name: "String configurable property that isn't configured",
+		input: `
+			m {
+				foo: "bar"
+			}
+		`,
+		output: []interface{}{
+			&struct {
+				Foo Configurable[string]
+			}{
+				Foo: Configurable[string]{
+					propertyName: "foo",
+					typ:          parser.SelectTypeUnconfigured,
+					cases: map[string]string{
+						default_select_branch_name: "bar",
+					},
+					appendWrapper: &appendWrapper[string]{},
+				},
+			},
+		},
+	},
+	{
+		name: "Bool configurable property that isn't configured",
+		input: `
+			m {
+				foo: true,
+			}
+		`,
+		output: []interface{}{
+			&struct {
+				Foo Configurable[bool]
+			}{
+				Foo: Configurable[bool]{
+					propertyName: "foo",
+					typ:          parser.SelectTypeUnconfigured,
+					cases: map[string]bool{
+						default_select_branch_name: true,
+					},
+					appendWrapper: &appendWrapper[bool]{},
+				},
+			},
+		},
+	},
+	{
+		name: "String list configurable property that isn't configured",
+		input: `
+			m {
+				foo: ["a", "b"],
+			}
+		`,
+		output: []interface{}{
+			&struct {
+				Foo Configurable[[]string]
+			}{
+				Foo: Configurable[[]string]{
+					propertyName: "foo",
+					typ:          parser.SelectTypeUnconfigured,
+					cases: map[string][]string{
+						default_select_branch_name: {"a", "b"},
+					},
+					appendWrapper: &appendWrapper[[]string]{},
+				},
+			},
+		},
+	},
+	{
+		name: "Configurable property",
+		input: `
+			m {
+				foo: select(soong_config_variable("my_namespace", "my_variable"), {
+					"a": "a2",
+					"b": "b2",
+					_: "c2",
+				})
+			}
+		`,
+		output: []interface{}{
+			&struct {
+				Foo Configurable[string]
+			}{
+				Foo: Configurable[string]{
+					propertyName: "foo",
+					typ:          parser.SelectTypeSoongConfigVariable,
+					condition:    "my_namespace:my_variable",
+					cases: map[string]string{
+						"a":                        "a2",
+						"b":                        "b2",
+						default_select_branch_name: "c2",
+					},
+					appendWrapper: &appendWrapper[string]{},
+				},
+			},
+		},
+	},
+	{
+		name: "Configurable property appending",
+		input: `
+			m {
+				foo: select(soong_config_variable("my_namespace", "my_variable"), {
+					"a": "a2",
+					"b": "b2",
+					_: "c2",
+				}) + select(soong_config_variable("my_namespace", "my_2nd_variable"), {
+					"d": "d2",
+					"e": "e2",
+					_: "f2",
+				})
+			}
+		`,
+		output: []interface{}{
+			&struct {
+				Foo Configurable[string]
+			}{
+				Foo: Configurable[string]{
+					propertyName: "foo",
+					typ:          parser.SelectTypeSoongConfigVariable,
+					condition:    "my_namespace:my_variable",
+					cases: map[string]string{
+						"a":                        "a2",
+						"b":                        "b2",
+						default_select_branch_name: "c2",
+					},
+					appendWrapper: &appendWrapper[string]{
+						append: Configurable[string]{
+							propertyName: "foo",
+							typ:          parser.SelectTypeSoongConfigVariable,
+							condition:    "my_namespace:my_2nd_variable",
+							cases: map[string]string{
+								"d":                        "d2",
+								"e":                        "e2",
+								default_select_branch_name: "f2",
+							},
+							appendWrapper: &appendWrapper[string]{},
+						},
+					},
+				},
+			},
+		},
+	},
 }
 
 func TestUnpackProperties(t *testing.T) {

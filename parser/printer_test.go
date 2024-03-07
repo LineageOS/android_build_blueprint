@@ -20,6 +20,7 @@ import (
 )
 
 var validPrinterTestCases = []struct {
+	name   string
 	input  string
 	output string
 }{
@@ -559,37 +560,121 @@ foo {
 }
 `,
 	},
+	{
+		name: "Basic selects",
+		input: `
+// test
+foo {
+    stuff: select(soong_config_variable("my_namespace", "my_variable"), {
+        "a": "a2",
+        // test2
+        "b": "b2",
+        // test3
+        _: "c2",
+    }),
+}
+`,
+		output: `
+// test
+foo {
+    stuff: select(soong_config_variable("my_namespace", "my_variable"), {
+        "a": "a2",
+        // test2
+        "b": "b2",
+        // test3
+        _: "c2",
+    }),
+}
+`,
+	},
+	{
+		name: "Remove select with only default",
+		input: `
+// test
+foo {
+    stuff: select(soong_config_variable("my_namespace", "my_variable"), {
+        // test2
+        _: "c2",
+    }),
+}
+`,
+		// TODO(b/323382414): This shouldn't have an empty newline after stuff
+		output: `
+// test
+foo {
+    stuff: "c2", // test2
+
+}
+`,
+	},
+	{
+		name: "Appended selects",
+		input: `
+// test
+foo {
+    stuff: select(soong_config_variable("my_namespace", "my_variable"), {
+        "a": "a2",
+        // test2
+        "b": "b2",
+        // test3
+        _: "c2",
+    }) + select(release_variable("RELEASE_TEST"), {
+        "d": "d2",
+        "e": "e2",
+        _: "f2",
+    }),
+}
+`,
+		output: `
+// test
+foo {
+    stuff: select(soong_config_variable("my_namespace", "my_variable"), {
+        "a": "a2",
+        // test2
+        "b": "b2",
+        // test3
+        _: "c2",
+    }) + select(release_variable("RELEASE_TEST"), {
+        "d": "d2",
+        "e": "e2",
+        _: "f2",
+    }),
+}
+`,
+	},
 }
 
 func TestPrinter(t *testing.T) {
 	for _, testCase := range validPrinterTestCases {
-		in := testCase.input[1:]
-		expected := testCase.output[1:]
+		t.Run(testCase.name, func(t *testing.T) {
+			in := testCase.input[1:]
+			expected := testCase.output[1:]
 
-		r := bytes.NewBufferString(in)
-		file, errs := Parse("", r, NewScope(nil))
-		if len(errs) != 0 {
-			t.Errorf("test case: %s", in)
-			t.Errorf("unexpected errors:")
-			for _, err := range errs {
-				t.Errorf("  %s", err)
+			r := bytes.NewBufferString(in)
+			file, errs := Parse("", r, NewScope(nil))
+			if len(errs) != 0 {
+				t.Errorf("test case: %s", in)
+				t.Errorf("unexpected errors:")
+				for _, err := range errs {
+					t.Errorf("  %s", err)
+				}
+				t.FailNow()
 			}
-			t.FailNow()
-		}
 
-		SortLists(file)
+			SortLists(file)
 
-		got, err := Print(file)
-		if err != nil {
-			t.Errorf("test case: %s", in)
-			t.Errorf("unexpected error: %s", err)
-			t.FailNow()
-		}
+			got, err := Print(file)
+			if err != nil {
+				t.Errorf("test case: %s", in)
+				t.Errorf("unexpected error: %s", err)
+				t.FailNow()
+			}
 
-		if string(got) != expected {
-			t.Errorf("test case: %s", in)
-			t.Errorf("  expected: %s", expected)
-			t.Errorf("       got: %s", string(got))
-		}
+			if string(got) != expected {
+				t.Errorf("test case: %s", in)
+				t.Errorf("  expected: %s", expected)
+				t.Errorf("       got: %s", string(got))
+			}
+		})
 	}
 }

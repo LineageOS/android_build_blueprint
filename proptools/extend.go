@@ -358,14 +358,21 @@ func extendPropertiesRecursive(dstValues []reflect.Value, srcValue reflect.Value
 
 			switch srcFieldValue.Kind() {
 			case reflect.Struct:
-				if sameTypes && dstFieldValue.Type() != srcFieldValue.Type() {
-					return extendPropertyErrorf(propertyName(srcField), "mismatched types %s and %s",
-						dstFieldValue.Type(), srcFieldValue.Type())
-				}
+				if isConfigurable(srcField.Type) {
+					if srcFieldValue.Type() != dstFieldValue.Type() {
+						return extendPropertyErrorf(propertyName(srcField), "mismatched types %s and %s",
+							dstFieldValue.Type(), srcFieldValue.Type())
+					}
+				} else {
+					if sameTypes && dstFieldValue.Type() != srcFieldValue.Type() {
+						return extendPropertyErrorf(propertyName(srcField), "mismatched types %s and %s",
+							dstFieldValue.Type(), srcFieldValue.Type())
+					}
 
-				// Recursively extend the struct's fields.
-				recurse = append(recurse, dstFieldValue)
-				continue
+					// Recursively extend the struct's fields.
+					recurse = append(recurse, dstFieldValue)
+					continue
+				}
 			case reflect.Bool, reflect.String, reflect.Slice, reflect.Map:
 				if srcFieldValue.Type() != dstFieldValue.Type() {
 					return extendPropertyErrorf(propertyName(srcField), "mismatched types %s and %s",
@@ -433,6 +440,18 @@ func ExtendBasicType(dstFieldValue, srcFieldValue reflect.Value, order Order) {
 	prepend := order == Prepend
 
 	switch srcFieldValue.Kind() {
+	case reflect.Struct:
+		if !isConfigurable(srcFieldValue.Type()) {
+			panic("Should be unreachable")
+		}
+		if dstFieldValue.Interface().(configurableReflection).isEmpty() {
+			dstFieldValue.Set(srcFieldValue)
+		} else if prepend {
+			srcFieldValue.Interface().(configurableReflection).setAppend(dstFieldValue.Interface())
+			dstFieldValue.Set(srcFieldValue)
+		} else {
+			dstFieldValue.Interface().(configurableReflection).setAppend(srcFieldValue.Interface())
+		}
 	case reflect.Bool:
 		// Boolean OR
 		dstFieldValue.Set(reflect.ValueOf(srcFieldValue.Bool() || dstFieldValue.Bool()))
@@ -524,6 +543,19 @@ func ExtendBasicType(dstFieldValue, srcFieldValue reflect.Value, order Order) {
 			} else {
 				// For append, replace the original value.
 				dstFieldValue.Set(reflect.ValueOf(StringPtr(srcFieldValue.Elem().String())))
+			}
+		case reflect.Struct:
+			srcFieldValue := srcFieldValue.Elem()
+			if !isConfigurable(srcFieldValue.Type()) {
+				panic("Should be unreachable")
+			}
+			if dstFieldValue.Interface().(configurableReflection).isEmpty() {
+				dstFieldValue.Set(srcFieldValue)
+			} else if prepend {
+				srcFieldValue.Interface().(configurableReflection).setAppend(dstFieldValue.Interface())
+				dstFieldValue.Set(srcFieldValue)
+			} else {
+				dstFieldValue.Interface().(configurableReflection).setAppend(srcFieldValue.Interface())
 			}
 		default:
 			panic(fmt.Errorf("unexpected pointer kind %s", ptrKind))
