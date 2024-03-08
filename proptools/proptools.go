@@ -136,6 +136,14 @@ func isSliceOfStruct(t reflect.Type) bool {
 	return isSlice(t) && isStruct(t.Elem())
 }
 
+func isStringOrStringPtr(t reflect.Type) bool {
+	return t.Kind() == reflect.String || (t.Kind() == reflect.Pointer && t.Elem().Kind() == reflect.String)
+}
+
 func isMapOfStruct(t reflect.Type) bool {
 	return t.Kind() == reflect.Map && isStruct(t.Elem())
+}
+
+func isConfigurable(t reflect.Type) bool {
+	return isStruct(t) && t.NumField() > 0 && typeFields(t)[0].Type == configurableMarkerType
 }
