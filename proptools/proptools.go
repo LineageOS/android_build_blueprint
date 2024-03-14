@@ -105,6 +105,15 @@ func String(s *string) string {
 	return StringDefault(s, "")
 }
 
+// Slice takes a pointer to a slice and returns the value of the slice if the pointer is non-nil,
+// or a nil slice.
+func Slice[T any](s *[]T) []T {
+	if s != nil {
+		return *s
+	}
+	return nil
+}
+
 // IntDefault takes a pointer to an int64 and returns the value pointed to by the pointer cast to int
 // if it is non-nil, or def if the pointer is nil.
 func IntDefault(i *int64, def int) int {
