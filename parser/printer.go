@@ -144,6 +144,7 @@ func (p *printer) printSelect(s *Select) {
 	}
 	if len(s.Cases) == 1 && s.Cases[0].Pattern.Value == "__soong_conditions_default__" {
 		p.printExpression(s.Cases[0].Value)
+		p.pos = s.RBracePos
 		return
 	}
 	p.requestSpace()
@@ -317,8 +318,8 @@ func (p *printer) printEndOfLineCommentsBefore(pos scanner.Position) {
 	if len(p.skippedComments) > 0 {
 		for _, c := range p.skippedComments {
 			p.printComment(c)
+			p._requestNewline()
 		}
-		p._requestNewline()
 		p.skippedComments = nil
 	}
 	for p.curComment < len(p.comments) && p.comments[p.curComment].Pos().Line < pos.Line {
@@ -406,7 +407,9 @@ func (p *printer) printComment(cg *CommentGroup) {
 				p._requestNewline()
 			}
 		}
-		p.pos = comment.End()
+		if p.pos.Offset < comment.End().Offset {
+			p.pos = comment.End()
+		}
 	}
 }
 
