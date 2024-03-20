@@ -281,7 +281,6 @@ module // test
 		output: `
 // test
 module { // test
-
     srcs: [
         "src1.c",
         "src2.c",
@@ -356,9 +355,7 @@ test // test
 `,
 		output: `
 test { // test
-
 // test
-
 }
 `,
 	},
@@ -598,12 +595,10 @@ foo {
     }),
 }
 `,
-		// TODO(b/323382414): This shouldn't have an empty newline after stuff
 		output: `
 // test
 foo {
     stuff: "c2", // test2
-
 }
 `,
 	},
