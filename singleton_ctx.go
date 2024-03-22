@@ -60,6 +60,9 @@ type SingletonContext interface {
 	// Errorf reports an error at the specified position of the module definition file.
 	Errorf(format string, args ...interface{})
 
+	// OtherModulePropertyErrorf reports an error on the line number of the given property of the given module
+	OtherModulePropertyErrorf(module Module, property string, format string, args ...interface{})
+
 	// Failed returns true if any errors have been reported.  In most cases the singleton can continue with generating
 	// build rules after an error, allowing it to report additional errors in a single run, but in cases where the error
 	// has prevented the singleton from creating necessary data it can return early when Failed returns true.
@@ -222,6 +225,12 @@ func (s *singletonContext) ModuleErrorf(logicModule Module, format string,
 func (s *singletonContext) Errorf(format string, args ...interface{}) {
 	// TODO: Make this not result in the error being printed as "internal error"
 	s.error(fmt.Errorf(format, args...))
+}
+
+func (s *singletonContext) OtherModulePropertyErrorf(logicModule Module, property string, format string,
+	args ...interface{}) {
+
+	s.error(s.context.PropertyErrorf(logicModule, property, format, args...))
 }
 
 func (s *singletonContext) Failed() bool {
