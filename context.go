@@ -1068,8 +1068,12 @@ func shouldVisitFile(c *Context, file *parser.File) shouldVisitFileInfo {
 	}
 
 	if blueprintPackageIncludes != nil {
-		packageMatches := blueprintPackageIncludes.MatchesIncludeTags(c)
-		if !packageMatches {
+		packageMatches, err := blueprintPackageIncludes.matchesIncludeTags(c)
+		if err != nil {
+			return shouldVisitFileInfo{
+				errs: []error{err},
+			}
+		} else if !packageMatches {
 			return shouldVisitFileInfo{
 				shouldVisitFile: false,
 				skippedModules:  skippedModules,
@@ -5265,14 +5269,14 @@ func (pi *PackageIncludes) MatchAll() []string {
 }
 
 // Returns true if all requested include tags are set in the Context object
-func (pi *PackageIncludes) MatchesIncludeTags(ctx *Context) bool {
+func (pi *PackageIncludes) matchesIncludeTags(ctx *Context) (bool, error) {
 	if len(pi.MatchAll()) == 0 {
-		ctx.ModuleErrorf(pi, "Match_all must be a non-empty list")
+		return false, ctx.ModuleErrorf(pi, "Match_all must be a non-empty list")
 	}
 	for _, includeTag := range pi.MatchAll() {
 		if !ctx.ContainsIncludeTag(includeTag) {
-			return false
+			return false, nil
 		}
 	}
-	return true
+	return true, nil
 }
