@@ -166,6 +166,9 @@ type EarlyModuleContext interface {
 	// PropertyErrorf reports an error at the line number of a property in the module definition.
 	PropertyErrorf(property, fmt string, args ...interface{})
 
+	// OtherModulePropertyErrorf reports an error at the line number of a property in the given module definition.
+	OtherModulePropertyErrorf(logicModule Module, property string, format string, args ...interface{})
+
 	// Failed returns true if any errors have been reported.  In most cases the module can continue with generating
 	// build rules after an error, allowing it to report additional errors in a single run, but in cases where the error
 	// has prevented the module from creating necessary data it can return early when Failed returns true.
@@ -454,34 +457,19 @@ func (d *baseModuleContext) Errorf(pos scanner.Position,
 func (d *baseModuleContext) ModuleErrorf(format string,
 	args ...interface{}) {
 
-	d.error(&ModuleError{
-		BlueprintError: BlueprintError{
-			Err: fmt.Errorf(format, args...),
-			Pos: d.module.pos,
-		},
-		module: d.module,
-	})
+	d.error(d.context.ModuleErrorf(d.module.logicModule, format, args...))
 }
 
 func (d *baseModuleContext) PropertyErrorf(property, format string,
 	args ...interface{}) {
 
-	pos := d.module.propertyPos[property]
+	d.error(d.context.PropertyErrorf(d.module.logicModule, property, format, args...))
+}
 
-	if !pos.IsValid() {
-		pos = d.module.pos
-	}
+func (d *baseModuleContext) OtherModulePropertyErrorf(logicModule Module, property string, format string,
+	args ...interface{}) {
 
-	d.error(&PropertyError{
-		ModuleError: ModuleError{
-			BlueprintError: BlueprintError{
-				Err: fmt.Errorf(format, args...),
-				Pos: pos,
-			},
-			module: d.module,
-		},
-		property: property,
-	})
+	d.error(d.context.PropertyErrorf(logicModule, property, format, args...))
 }
 
 func (d *baseModuleContext) Failed() bool {

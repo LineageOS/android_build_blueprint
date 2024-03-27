@@ -28,7 +28,7 @@ type ConfigurableElements interface {
 }
 
 type ConfigurableEvaluator interface {
-	EvaluateConfiguration(parser.SelectType, string) (string, bool)
+	EvaluateConfiguration(typ parser.SelectType, property, condition string) (string, bool)
 	PropertyErrorf(property, fmt string, args ...interface{})
 }
 
@@ -121,7 +121,7 @@ func (c *Configurable[T]) evaluateNonTransitive(evaluator ConfigurableEvaluator)
 		}
 		return &result
 	}
-	val, defined := evaluator.EvaluateConfiguration(c.typ, c.condition)
+	val, defined := evaluator.EvaluateConfiguration(c.typ, c.propertyName, c.condition)
 	if !defined {
 		if result, ok := c.cases[default_select_branch_name]; ok {
 			return &result

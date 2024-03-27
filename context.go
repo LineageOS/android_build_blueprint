@@ -4125,9 +4125,34 @@ func (c *Context) ModuleErrorf(logicModule Module, format string,
 	args ...interface{}) error {
 
 	module := c.moduleInfo[logicModule]
-	return &BlueprintError{
-		Err: fmt.Errorf(format, args...),
-		Pos: module.pos,
+	return &ModuleError{
+		BlueprintError: BlueprintError{
+			Err: fmt.Errorf(format, args...),
+			Pos: module.pos,
+		},
+		module: module,
+	}
+}
+
+func (c *Context) PropertyErrorf(logicModule Module, property string, format string,
+	args ...interface{}) error {
+
+	module := c.moduleInfo[logicModule]
+	pos := module.propertyPos[property]
+
+	if !pos.IsValid() {
+		pos = module.pos
+	}
+
+	return &PropertyError{
+		ModuleError: ModuleError{
+			BlueprintError: BlueprintError{
+				Err: fmt.Errorf(format, args...),
+				Pos: pos,
+			},
+			module: module,
+		},
+		property: property,
 	}
 }
 
