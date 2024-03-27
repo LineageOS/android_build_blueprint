@@ -85,8 +85,8 @@ func filterPropertyStructFields(fields []reflect.StructField, prefix string, max
 			ptrToStruct = true
 		}
 
-		// Recurse into structs
-		if ptrToStruct || isStruct(field.Type) {
+		// Recurse into structs, except if they are configurable properties
+		if !isConfigurable(field.Type) && (ptrToStruct || isStruct(field.Type)) {
 			subMaxTypeNameSize := maxTypeNameSize
 			if maxTypeNameSize > 0 {
 				// In the worst case where only this nested struct will fit in the outer struct, the
