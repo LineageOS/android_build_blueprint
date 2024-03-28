@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"syscall"
 	"testing"
 )
@@ -233,7 +234,7 @@ func TestFs_ListDirsRecursiveFollowSymlinks(t *testing.T) {
 			t.Run(test.name, func(t *testing.T) {
 				got, err := fs.ListDirsRecursive(filepath.Join(dir, test.name), FollowSymlinks)
 				checkErr(t, test.err, err)
-				want := append([]string(nil), test.dirs...)
+				want := slices.Clone(test.dirs)
 				for i := range want {
 					want[i] = filepath.Join(dir, want[i])
 				}
@@ -279,7 +280,7 @@ func TestFs_ListDirsRecursiveDontFollowSymlinks(t *testing.T) {
 			t.Run(test.name, func(t *testing.T) {
 				got, err := fs.ListDirsRecursive(filepath.Join(dir, test.name), DontFollowSymlinks)
 				checkErr(t, test.err, err)
-				want := append([]string(nil), test.dirs...)
+				want := slices.Clone(test.dirs)
 				for i := range want {
 					want[i] = filepath.Join(dir, want[i])
 				}

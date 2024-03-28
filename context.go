@@ -24,6 +24,7 @@ import (
 	"hash/fnv"
 	"io"
 	"io/ioutil"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -418,15 +419,7 @@ type Variation struct {
 type variationMap map[string]string
 
 func (vm variationMap) clone() variationMap {
-	if vm == nil {
-		return nil
-	}
-	newVm := make(variationMap)
-	for k, v := range vm {
-		newVm[k] = v
-	}
-
-	return newVm
+	return maps.Clone(vm)
 }
 
 // Compare this variationMap to another one.  Returns true if the every entry in this map
@@ -441,10 +434,7 @@ func (vm variationMap) subsetOf(other variationMap) bool {
 }
 
 func (vm variationMap) equal(other variationMap) bool {
-	if len(vm) != len(other) {
-		return false
-	}
-	return vm.subsetOf(other)
+	return maps.Equal(vm, other)
 }
 
 type singletonInfo struct {
@@ -800,15 +790,10 @@ type transitionMutatorImpl struct {
 
 // Adds each argument in items to l if it's not already there.
 func addToStringListIfNotPresent(l []string, items ...string) []string {
-OUTER:
 	for _, i := range items {
-		for _, existing := range l {
-			if existing == i {
-				continue OUTER
-			}
+		if !slices.Contains(l, i) {
+			l = append(l, i)
 		}
-
-		l = append(l, i)
 	}
 
 	return l
@@ -1746,14 +1731,14 @@ func (c *Context) createVariations(origModule *moduleInfo, mutatorName string,
 
 		m := *origModule
 		newModule := &m
-		newModule.directDeps = append([]depInfo(nil), origModule.directDeps...)
+		newModule.directDeps = slices.Clone(origModule.directDeps)
 		newModule.reverseDeps = nil
 		newModule.forwardDeps = nil
 		newModule.logicModule = newLogicModule
 		newModule.variant = newVariant(origModule, mutatorName, variationName, local)
 		newModule.properties = newProperties
-		newModule.providers = append([]interface{}(nil), origModule.providers...)
-		newModule.providerInitialValueHashes = append([]uint64(nil), origModule.providerInitialValueHashes...)
+		newModule.providers = slices.Clone(origModule.providers)
+		newModule.providerInitialValueHashes = slices.Clone(origModule.providerInitialValueHashes)
 
 		newModules = append(newModules, newModule)
 
