@@ -1004,8 +1004,8 @@ func (mctx *mutatorContext) CreateVariations(variationNames ...string) []Module 
 	return mctx.createVariations(variationNames, depChooser, false)
 }
 
-func (mctx *mutatorContext) createVariationsWithTransition(transition Transition, variationNames ...string) []Module {
-	return mctx.createVariations(variationNames, chooseDepByTransition(mctx.name, transition), false)
+func (mctx *mutatorContext) createVariationsWithTransition(variationNames []string, outgoingTransitions [][]string) []Module {
+	return mctx.createVariations(variationNames, chooseDepByIndexes(mctx.name, outgoingTransitions), false)
 }
 
 func (mctx *mutatorContext) CreateLocalVariations(variationNames ...string) []Module {
@@ -1106,12 +1106,8 @@ func (mctx *mutatorContext) CreateAliasVariation(aliasVariationName, targetVaria
 	panic(fmt.Errorf("no %q variation in module variations %q", targetVariationName, foundVariations))
 }
 
-func (mctx *mutatorContext) applyTransition(transition Transition) {
-	mctx.context.convertDepsToVariation(mctx.module, chooseDepByTransition(mctx.name, transition))
-}
-
 func (mctx *mutatorContext) SetDependencyVariation(variationName string) {
-	mctx.context.convertDepsToVariation(mctx.module, chooseDepExplicit(
+	mctx.context.convertDepsToVariation(mctx.module, 0, chooseDepExplicit(
 		mctx.name, variationName, nil))
 }
 

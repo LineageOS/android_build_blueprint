@@ -351,6 +351,10 @@ type moduleInfo struct {
 	currentTransitionMutator string
 	requiredVariationsLock   sync.Mutex
 
+	// outgoingTransitionCache stores the final variation for each dependency, indexed by the source variation
+	// index in transitionVariations and then by the index of the dependency in directDeps
+	outgoingTransitionCache [][]string
+
 	// set during PrepareBuildActions
 	actionDefs localBuildActions
 
@@ -828,12 +832,17 @@ func (t *transitionMutatorImpl) topDownMutator(mctx TopDownMutatorContext) {
 	module.transitionVariations = addToStringListIfNotPresent(module.transitionVariations, mutatorSplits...)
 	sort.Strings(module.transitionVariations)
 
-	for _, srcVariation := range module.transitionVariations {
-		for _, dep := range module.directDeps {
+	outgoingTransitionCache := make([][]string, len(module.transitionVariations))
+	for srcVariationIndex, srcVariation := range module.transitionVariations {
+		srcVariationTransitionCache := make([]string, len(module.directDeps))
+		for depIndex, dep := range module.directDeps {
 			finalVariation := t.transition(mctx)(mctx.Module(), srcVariation, dep.module.logicModule, dep.tag)
+			srcVariationTransitionCache[depIndex] = finalVariation
 			t.addRequiredVariation(dep.module, finalVariation)
 		}
+		outgoingTransitionCache[srcVariationIndex] = srcVariationTransitionCache
 	}
+	module.outgoingTransitionCache = outgoingTransitionCache
 }
 
 type transitionContextImpl struct {
@@ -882,7 +891,9 @@ func (t *transitionMutatorImpl) bottomUpMutator(mctx BottomUpMutatorContext) {
 	// only time interaction between multiple modules is required is during the
 	// computation of the variations required by a given module.
 	variations := mc.module.transitionVariations
+	outgoingTransitionCache := mc.module.outgoingTransitionCache
 	mc.module.transitionVariations = nil
+	mc.module.outgoingTransitionCache = nil
 	mc.module.currentTransitionMutator = ""
 
 	if len(variations) < 1 {
@@ -892,9 +903,10 @@ func (t *transitionMutatorImpl) bottomUpMutator(mctx BottomUpMutatorContext) {
 
 	if len(variations) == 1 && variations[0] == "" {
 		// Module is not split, just apply the transition
-		mc.applyTransition(t.transition(mctx))
+		mc.context.convertDepsToVariation(mc.module, 0,
+			chooseDepByIndexes(mc.name, outgoingTransitionCache))
 	} else {
-		mc.createVariationsWithTransition(t.transition(mctx), variations...)
+		mc.createVariationsWithTransition(variations, outgoingTransitionCache)
 	}
 }
 
@@ -1742,7 +1754,7 @@ func (c *Context) createVariations(origModule *moduleInfo, mutatorName string,
 
 		newModules = append(newModules, newModule)
 
-		newErrs := c.convertDepsToVariation(newModule, depChooser)
+		newErrs := c.convertDepsToVariation(newModule, i, depChooser)
 		if len(newErrs) > 0 {
 			errs = append(errs, newErrs...)
 		}
@@ -1758,37 +1770,12 @@ func (c *Context) createVariations(origModule *moduleInfo, mutatorName string,
 	return newModules, errs
 }
 
-type depChooser func(source *moduleInfo, dep depInfo) (*moduleInfo, string)
+type depChooser func(source *moduleInfo, variationIndex, depIndex int, dep depInfo) (*moduleInfo, string)
 
 // This function is called for every dependency edge to determine which
 // variation of the dependency is needed. Its inputs are the depending module,
 // its variation, the dependency and the dependency tag.
 type Transition func(source Module, sourceVariation string, dep Module, depTag DependencyTag) string
-
-func chooseDepByTransition(mutatorName string, transition Transition) depChooser {
-	return func(source *moduleInfo, dep depInfo) (*moduleInfo, string) {
-		sourceVariation := source.variant.variations[mutatorName]
-		depLogicModule := dep.module.logicModule
-		if depLogicModule == nil {
-			// This is really a lie because the original dependency before the split
-			// went away when it was split. We choose an arbitrary split module
-			// instead and hope that whatever information the transition wants from it
-			// is the same as in the original one
-			// TODO(lberki): this can be fixed by calling transition() once and saving
-			// its results somewhere
-			depLogicModule = dep.module.splitModules[0].moduleOrAliasTarget().logicModule
-		}
-
-		desiredVariation := transition(source.logicModule, sourceVariation, depLogicModule, dep.tag)
-		for _, m := range dep.module.splitModules {
-			if m.moduleOrAliasVariant().variations[mutatorName] == desiredVariation {
-				return m.moduleOrAliasTarget(), ""
-			}
-		}
-
-		return nil, desiredVariation
-	}
-}
 
 func chooseDep(candidates modulesOrAliases, mutatorName, variationName string, defaultVariationName *string) (*moduleInfo, string) {
 	for _, m := range candidates {
@@ -1809,24 +1796,31 @@ func chooseDep(candidates modulesOrAliases, mutatorName, variationName string, d
 	return nil, variationName
 }
 
+func chooseDepByIndexes(mutatorName string, variations [][]string) depChooser {
+	return func(source *moduleInfo, variationIndex, depIndex int, dep depInfo) (*moduleInfo, string) {
+		desiredVariation := variations[variationIndex][depIndex]
+		return chooseDep(dep.module.splitModules, mutatorName, desiredVariation, nil)
+	}
+}
+
 func chooseDepExplicit(mutatorName string,
 	variationName string, defaultVariationName *string) depChooser {
-	return func(source *moduleInfo, dep depInfo) (*moduleInfo, string) {
+	return func(source *moduleInfo, variationIndex, depIndex int, dep depInfo) (*moduleInfo, string) {
 		return chooseDep(dep.module.splitModules, mutatorName, variationName, defaultVariationName)
 	}
 }
 
 func chooseDepInherit(mutatorName string, defaultVariationName *string) depChooser {
-	return func(source *moduleInfo, dep depInfo) (*moduleInfo, string) {
+	return func(source *moduleInfo, variationIndex, depIndex int, dep depInfo) (*moduleInfo, string) {
 		sourceVariation := source.variant.variations[mutatorName]
 		return chooseDep(dep.module.splitModules, mutatorName, sourceVariation, defaultVariationName)
 	}
 }
 
-func (c *Context) convertDepsToVariation(module *moduleInfo, depChooser depChooser) (errs []error) {
+func (c *Context) convertDepsToVariation(module *moduleInfo, variationIndex int, depChooser depChooser) (errs []error) {
 	for i, dep := range module.directDeps {
 		if dep.module.logicModule == nil {
-			newDep, missingVariation := depChooser(module, dep)
+			newDep, missingVariation := depChooser(module, variationIndex, i, dep)
 			if newDep == nil {
 				errs = append(errs, &BlueprintError{
 					Err: fmt.Errorf("failed to find variation %q for module %q needed by %q",
