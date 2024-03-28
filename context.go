@@ -344,7 +344,8 @@ type moduleInfo struct {
 	waitingCount int
 
 	// set during each runMutator
-	splitModules modulesOrAliases
+	splitModules           modulesOrAliases
+	obsoletedByNewVariants bool
 
 	// Used by TransitionMutator implementations
 	transitionVariations     []string
@@ -1796,7 +1797,7 @@ func (c *Context) createVariations(origModule *moduleInfo, mutatorName string,
 
 	// Mark original variant as invalid.  Modules that depend on this module will still
 	// depend on origModule, but we'll fix it when the mutator is called on them.
-	origModule.logicModule = nil
+	origModule.obsoletedByNewVariants = true
 	origModule.splitModules = newModules
 
 	atomic.AddUint32(&c.depsModified, 1)
@@ -1853,7 +1854,7 @@ func chooseDepInherit(mutatorName string, defaultVariationName *string) depChoos
 
 func (c *Context) convertDepsToVariation(module *moduleInfo, variationIndex int, depChooser depChooser) (errs []error) {
 	for i, dep := range module.directDeps {
-		if dep.module.logicModule == nil {
+		if dep.module.obsoletedByNewVariants {
 			newDep, missingVariation := depChooser(module, variationIndex, i, dep)
 			if newDep == nil {
 				errs = append(errs, &BlueprintError{
@@ -3218,12 +3219,12 @@ func (c *Context) runMutator(config interface{}, mutator *mutatorInfo,
 			// Fix up any remaining dependencies on modules that were split into variants
 			// by replacing them with the first variant
 			for j, dep := range module.directDeps {
-				if dep.module.logicModule == nil {
+				if dep.module.obsoletedByNewVariants {
 					module.directDeps[j].module = dep.module.splitModules.firstModule()
 				}
 			}
 
-			if module.createdBy != nil && module.createdBy.logicModule == nil {
+			if module.createdBy != nil && module.createdBy.obsoletedByNewVariants {
 				module.createdBy = module.createdBy.splitModules.firstModule()
 			}
 
@@ -3248,7 +3249,7 @@ func (c *Context) runMutator(config interface{}, mutator *mutatorInfo,
 		// change inside the loop
 		for i := 0; i < len(group.modules); i++ {
 			if alias := group.modules[i].alias(); alias != nil {
-				if alias.target.logicModule == nil {
+				if alias.target.obsoletedByNewVariants {
 					newTarget := findAliasTarget(alias.target.variant)
 					if newTarget != nil {
 						alias.target = newTarget
