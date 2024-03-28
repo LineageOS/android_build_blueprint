@@ -688,6 +688,14 @@ type IncomingTransitionContext interface {
 	// Config returns the config object that was passed to
 	// Context.PrepareBuildActions.
 	Config() interface{}
+
+	// Provider returns the value for a provider for the target of the dependency edge for which the
+	// transition is being computed.  If the value is not set it returns nil and false.  It panics if
+	// called  before the appropriate mutator or GenerateBuildActions pass for the provider.  The value
+	// returned may be a deep copy of the value originally passed to SetProvider.
+	//
+	// This method shouldn't be used directly, prefer the type-safe android.ModuleProvider instead.
+	Provider(provider AnyProviderKey) (any, bool)
 }
 
 type OutgoingTransitionContext interface {
@@ -702,6 +710,14 @@ type OutgoingTransitionContext interface {
 	// Config returns the config object that was passed to
 	// Context.PrepareBuildActions.
 	Config() interface{}
+
+	// Provider returns the value for a provider for the source of the dependency edge for which the
+	// transition is being computed.  If the value is not set it returns nil and false.  It panics if
+	// called before the appropriate mutator or GenerateBuildActions pass for the provider.  The value
+	// returned may be a deep copy of the value originally passed to SetProvider.
+	//
+	// This method shouldn't be used directly, prefer the type-safe android.ModuleProvider instead.
+	Provider(provider AnyProviderKey) (any, bool)
 }
 
 // TransitionMutator implements a top-down mechanism where a module tells its
@@ -836,7 +852,7 @@ func (t *transitionMutatorImpl) topDownMutator(mctx TopDownMutatorContext) {
 	for srcVariationIndex, srcVariation := range module.transitionVariations {
 		srcVariationTransitionCache := make([]string, len(module.directDeps))
 		for depIndex, dep := range module.directDeps {
-			finalVariation := t.transition(mctx)(mctx.Module(), srcVariation, dep.module.logicModule, dep.tag)
+			finalVariation := t.transition(mctx)(mctx.moduleInfo(), srcVariation, dep.module, dep.tag)
 			srcVariationTransitionCache[depIndex] = finalVariation
 			t.addRequiredVariation(dep.module, finalVariation)
 		}
@@ -846,10 +862,11 @@ func (t *transitionMutatorImpl) topDownMutator(mctx TopDownMutatorContext) {
 }
 
 type transitionContextImpl struct {
-	source Module
-	dep    Module
-	depTag DependencyTag
-	config interface{}
+	context *Context
+	source  *moduleInfo
+	dep     *moduleInfo
+	depTag  DependencyTag
+	config  interface{}
 }
 
 func (c *transitionContextImpl) DepTag() DependencyTag {
@@ -865,7 +882,11 @@ type outgoingTransitionContextImpl struct {
 }
 
 func (c *outgoingTransitionContextImpl) Module() Module {
-	return c.source
+	return c.source.logicModule
+}
+
+func (c *outgoingTransitionContextImpl) Provider(provider AnyProviderKey) (any, bool) {
+	return c.context.provider(c.source, provider.provider())
 }
 
 type incomingTransitionContextImpl struct {
@@ -873,13 +894,26 @@ type incomingTransitionContextImpl struct {
 }
 
 func (c *incomingTransitionContextImpl) Module() Module {
-	return c.dep
+	return c.dep.logicModule
 }
 
-func (t *transitionMutatorImpl) transition(mctx BaseMutatorContext) Transition {
-	return func(source Module, sourceVariation string, dep Module, depTag DependencyTag) string {
-		tc := transitionContextImpl{source: source, dep: dep, depTag: depTag, config: mctx.Config()}
+func (c *incomingTransitionContextImpl) Provider(provider AnyProviderKey) (any, bool) {
+	return c.context.provider(c.dep, provider.provider())
+}
+
+func (t *transitionMutatorImpl) transition(mctx BaseModuleContext) Transition {
+	return func(source *moduleInfo, sourceVariation string, dep *moduleInfo, depTag DependencyTag) string {
+		tc := transitionContextImpl{
+			context: mctx.base().context,
+			source:  source,
+			dep:     dep,
+			depTag:  depTag,
+			config:  mctx.Config(),
+		}
 		outgoingVariation := t.mutator.OutgoingTransition(&outgoingTransitionContextImpl{tc}, sourceVariation)
+		if mctx.Failed() {
+			return outgoingVariation
+		}
 		finalVariation := t.mutator.IncomingTransition(&incomingTransitionContextImpl{tc}, outgoingVariation)
 		return finalVariation
 	}
@@ -1775,7 +1809,7 @@ type depChooser func(source *moduleInfo, variationIndex, depIndex int, dep depIn
 // This function is called for every dependency edge to determine which
 // variation of the dependency is needed. Its inputs are the depending module,
 // its variation, the dependency and the dependency tag.
-type Transition func(source Module, sourceVariation string, dep Module, depTag DependencyTag) string
+type Transition func(source *moduleInfo, sourceVariation string, dep *moduleInfo, depTag DependencyTag) string
 
 func chooseDep(candidates modulesOrAliases, mutatorName, variationName string, defaultVariationName *string) (*moduleInfo, string) {
 	for _, m := range candidates {

@@ -357,6 +357,8 @@ type BaseModuleContext interface {
 	SetProvider(provider AnyProviderKey, value any)
 
 	EarlyGetMissingDependencies() []string
+
+	base() *baseModuleContext
 }
 
 type DynamicDependerModuleContext BottomUpMutatorContext
@@ -761,6 +763,10 @@ func (m *baseModuleContext) ModuleFactories() map[string]ModuleFactory {
 		ret[k] = v
 	}
 	return ret
+}
+
+func (m *baseModuleContext) base() *baseModuleContext {
+	return m
 }
 
 func (m *moduleContext) ModuleSubDir() string {
