@@ -1262,7 +1262,7 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 				S: Configurable[[]string]{
 					typ:       parser.SelectTypeSoongConfigVariable,
 					condition: "foo",
-					cases: map[string][]string{
+					cases: map[string]*[]string{
 						"a": {"1", "2"},
 					},
 					appendWrapper: &appendWrapper[[]string]{},
@@ -1272,7 +1272,7 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 				S: Configurable[[]string]{
 					typ:       parser.SelectTypeReleaseVariable,
 					condition: "bar",
-					cases: map[string][]string{
+					cases: map[string]*[]string{
 						"b": {"3", "4"},
 					},
 					appendWrapper: &appendWrapper[[]string]{},
@@ -1282,14 +1282,14 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 				S: Configurable[[]string]{
 					typ:       parser.SelectTypeSoongConfigVariable,
 					condition: "foo",
-					cases: map[string][]string{
+					cases: map[string]*[]string{
 						"a": {"1", "2"},
 					},
 					appendWrapper: &appendWrapper[[]string]{
 						append: Configurable[[]string]{
 							typ:       parser.SelectTypeReleaseVariable,
 							condition: "bar",
-							cases: map[string][]string{
+							cases: map[string]*[]string{
 								"b": {"3", "4"},
 							},
 							appendWrapper: &appendWrapper[[]string]{},
@@ -1305,7 +1305,7 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 				S: Configurable[[]string]{
 					typ:       parser.SelectTypeSoongConfigVariable,
 					condition: "foo",
-					cases: map[string][]string{
+					cases: map[string]*[]string{
 						"a": {"1", "2"},
 					},
 					appendWrapper: &appendWrapper[[]string]{},
@@ -1315,7 +1315,7 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 				S: Configurable[[]string]{
 					typ:       parser.SelectTypeReleaseVariable,
 					condition: "bar",
-					cases: map[string][]string{
+					cases: map[string]*[]string{
 						"b": {"3", "4"},
 					},
 					appendWrapper: &appendWrapper[[]string]{},
@@ -1325,14 +1325,14 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 				S: Configurable[[]string]{
 					typ:       parser.SelectTypeReleaseVariable,
 					condition: "bar",
-					cases: map[string][]string{
+					cases: map[string]*[]string{
 						"b": {"3", "4"},
 					},
 					appendWrapper: &appendWrapper[[]string]{
 						append: Configurable[[]string]{
 							typ:       parser.SelectTypeSoongConfigVariable,
 							condition: "foo",
-							cases: map[string][]string{
+							cases: map[string]*[]string{
 								"a": {"1", "2"},
 							},
 							appendWrapper: &appendWrapper[[]string]{},
