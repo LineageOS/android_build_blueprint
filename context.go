@@ -3086,6 +3086,11 @@ func (c *Context) runMutator(config interface{}, mutator *mutatorInfo,
 		deps       []string
 	}
 
+	type newVariationPair struct {
+		newVariations   modulesOrAliases
+		origLogicModule Module
+	}
+
 	reverseDeps := make(map[*moduleInfo][]depInfo)
 	var rename []rename
 	var replace []replace
@@ -3093,7 +3098,7 @@ func (c *Context) runMutator(config interface{}, mutator *mutatorInfo,
 
 	errsCh := make(chan []error)
 	globalStateCh := make(chan globalStateChange)
-	newVariationsCh := make(chan modulesOrAliases)
+	newVariationsCh := make(chan newVariationPair)
 	done := make(chan bool)
 
 	c.depsModified = 0
@@ -3112,6 +3117,8 @@ func (c *Context) runMutator(config interface{}, mutator *mutatorInfo,
 			name:    mutator.name,
 			pauseCh: pause,
 		}
+
+		origLogicModule := module.logicModule
 
 		module.startedMutator = mutator
 
@@ -3138,7 +3145,7 @@ func (c *Context) runMutator(config interface{}, mutator *mutatorInfo,
 		}
 
 		if len(mctx.newVariations) > 0 {
-			newVariationsCh <- mctx.newVariations
+			newVariationsCh <- newVariationPair{mctx.newVariations, origLogicModule}
 		}
 
 		if len(mctx.reverseDeps) > 0 || len(mctx.replace) > 0 || len(mctx.rename) > 0 || len(mctx.newModules) > 0 || len(mctx.ninjaFileDeps) > 0 {
@@ -3153,6 +3160,8 @@ func (c *Context) runMutator(config interface{}, mutator *mutatorInfo,
 
 		return false
 	}
+
+	var obsoleteLogicModules []Module
 
 	// Process errs and reverseDeps in a single goroutine
 	go func() {
@@ -3169,7 +3178,10 @@ func (c *Context) runMutator(config interface{}, mutator *mutatorInfo,
 				newModules = append(newModules, globalStateChange.newModules...)
 				deps = append(deps, globalStateChange.deps...)
 			case newVariations := <-newVariationsCh:
-				for _, moduleOrAlias := range newVariations {
+				if newVariations.origLogicModule != newVariations.newVariations[0].module().logicModule {
+					obsoleteLogicModules = append(obsoleteLogicModules, newVariations.origLogicModule)
+				}
+				for _, moduleOrAlias := range newVariations.newVariations {
 					if m := moduleOrAlias.module(); m != nil {
 						newModuleInfo[m.logicModule] = m
 					}
@@ -3199,6 +3211,10 @@ func (c *Context) runMutator(config interface{}, mutator *mutatorInfo,
 
 	if len(errs) > 0 {
 		return nil, errs
+	}
+
+	for _, obsoleteLogicModule := range obsoleteLogicModules {
+		delete(newModuleInfo, obsoleteLogicModule)
 	}
 
 	c.moduleInfo = newModuleInfo
