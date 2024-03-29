@@ -939,7 +939,7 @@ func (t *transitionMutatorImpl) bottomUpMutator(mctx BottomUpMutatorContext) {
 	if len(variations) == 1 && variations[0] == "" {
 		// Module is not split, just apply the transition
 		mc.context.convertDepsToVariation(mc.module, 0,
-			chooseDepByIndexes(mc.name, outgoingTransitionCache))
+			chooseDepByIndexes(mc.mutator.name, outgoingTransitionCache))
 	} else {
 		mc.createVariationsWithTransition(variations, outgoingTransitionCache)
 	}
@@ -1751,12 +1751,12 @@ func newVariant(module *moduleInfo, mutatorName string, variationName string,
 	return variant{newVariantName, newVariations, newDependencyVariations}
 }
 
-func (c *Context) createVariations(origModule *moduleInfo, mutatorName string,
+func (c *Context) createVariations(origModule *moduleInfo, mutator *mutatorInfo,
 	depChooser depChooser, variationNames []string, local bool) (modulesOrAliases, []error) {
 
 	if len(variationNames) == 0 {
 		panic(fmt.Errorf("mutator %q passed zero-length variation list for module %q",
-			mutatorName, origModule.Name()))
+			mutator.name, origModule.Name()))
 	}
 
 	var newModules modulesOrAliases
@@ -1782,7 +1782,7 @@ func (c *Context) createVariations(origModule *moduleInfo, mutatorName string,
 		newModule.reverseDeps = nil
 		newModule.forwardDeps = nil
 		newModule.logicModule = newLogicModule
-		newModule.variant = newVariant(origModule, mutatorName, variationName, local)
+		newModule.variant = newVariant(origModule, mutator.name, variationName, local)
 		newModule.properties = newProperties
 		newModule.providers = slices.Clone(origModule.providers)
 		newModule.providerInitialValueHashes = slices.Clone(origModule.providerInitialValueHashes)
@@ -3114,7 +3114,7 @@ func (c *Context) runMutator(config interface{}, mutator *mutatorInfo,
 				config:  config,
 				module:  module,
 			},
-			name:    mutator.name,
+			mutator: mutator,
 			pauseCh: pause,
 		}
 
