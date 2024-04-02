@@ -17,6 +17,7 @@ package proptools
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 )
 
@@ -317,7 +318,7 @@ func extendPropertiesRecursive(dstValues []reflect.Value, srcValue reflect.Value
 						// of destinations to consider.  Make a copy of dstValues if necessary
 						// to avoid modifying the backing array of an input parameter.
 						if !dstValuesCopied {
-							dstValues = append([]reflect.Value(nil), dstValues...)
+							dstValues = slices.Clone(dstValues)
 							dstValuesCopied = true
 						}
 						dstValues = append(dstValues, embeddedDstValue)
