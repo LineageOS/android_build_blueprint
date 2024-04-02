@@ -794,7 +794,7 @@ var validUnpackTestCases = []struct {
 				foo: select(soong_config_variable("my_namespace", "my_variable"), {
 					"a": "a2",
 					"b": "b2",
-					_: "c2",
+					default: "c2",
 				})
 			}
 		`,
@@ -823,11 +823,11 @@ var validUnpackTestCases = []struct {
 				foo: select(soong_config_variable("my_namespace", "my_variable"), {
 					"a": "a2",
 					"b": "b2",
-					_: "c2",
+					default: "c2",
 				}) + select(soong_config_variable("my_namespace", "my_2nd_variable"), {
 					"d": "d2",
 					"e": "e2",
-					_: "f2",
+					default: "f2",
 				})
 			}
 		`,
