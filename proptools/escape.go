@@ -15,6 +15,7 @@
 package proptools
 
 import (
+	"slices"
 	"strings"
 	"unsafe"
 )
@@ -33,7 +34,7 @@ func NinjaEscapeList(slice []string) []string {
 			if !sliceCopied {
 				// If this was the first string that was modified by escaping then make a copy of the
 				// input slice to use as the output slice.
-				slice = append([]string(nil), slice...)
+				slice = slices.Clone(slice)
 				sliceCopied = true
 			}
 			slice[i] = escaped
@@ -66,7 +67,7 @@ func ShellEscapeList(slice []string) []string {
 			if !sliceCopied {
 				// If this was the first string that was modified by escaping then make a copy of the
 				// input slice to use as the output slice.
-				slice = append([]string(nil), slice...)
+				slice = slices.Clone(slice)
 				sliceCopied = true
 			}
 			slice[i] = escaped
@@ -83,7 +84,7 @@ func ShellEscapeListIncludingSpaces(slice []string) []string {
 			if !sliceCopied {
 				// If this was the first string that was modified by escaping then make a copy of the
 				// input slice to use as the output slice.
-				slice = append([]string(nil), slice...)
+				slice = slices.Clone(slice)
 				sliceCopied = true
 			}
 			slice[i] = escaped
