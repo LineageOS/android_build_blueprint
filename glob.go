@@ -16,6 +16,7 @@ package blueprint
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -40,7 +41,7 @@ func verifyGlob(key globKey, pattern string, excludes []string, g pathtools.Glob
 func (c *Context) glob(pattern string, excludes []string) ([]string, error) {
 	// Sort excludes so that two globs with the same excludes in a different order reuse the same
 	// key.  Make a copy first to avoid modifying the caller's version.
-	excludes = append([]string(nil), excludes...)
+	excludes = slices.Clone(excludes)
 	sort.Strings(excludes)
 
 	key := globToKey(pattern, excludes)
@@ -54,7 +55,7 @@ func (c *Context) glob(pattern string, excludes []string) ([]string, error) {
 		// Glob has already been done, double check it is identical
 		verifyGlob(key, pattern, excludes, g)
 		// Return a copy so that modifications don't affect the cached value.
-		return append([]string(nil), g.Matches...), nil
+		return slices.Clone(g.Matches), nil
 	}
 
 	// Get a globbed file list
@@ -74,11 +75,11 @@ func (c *Context) glob(pattern string, excludes []string) ([]string, error) {
 		// Getting the list raced with another goroutine, throw away the results and use theirs
 		verifyGlob(key, pattern, excludes, g)
 		// Return a copy so that modifications don't affect the cached value.
-		return append([]string(nil), g.Matches...), nil
+		return slices.Clone(g.Matches), nil
 	}
 
 	// Return a copy so that modifications don't affect the cached value.
-	return append([]string(nil), result.Matches...), nil
+	return slices.Clone(result.Matches), nil
 }
 
 func (c *Context) Globs() pathtools.MultipleGlobResults {

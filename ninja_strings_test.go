@@ -16,6 +16,7 @@ package blueprint
 
 import (
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -271,7 +272,7 @@ func Test_parseNinjaOrSimpleStrings(t *testing.T) {
 
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
-			inCopy := append([]string(nil), tt.in...)
+			inCopy := slices.Clone(tt.in)
 
 			scope := newLocalScope(nil, "")
 			scope.AddLocalVariable("abc", "abc")

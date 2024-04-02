@@ -20,6 +20,7 @@ import (
 	"go/doc"
 	"html/template"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -34,7 +35,7 @@ import (
 
 func (ps *PropertyStruct) Clone() *PropertyStruct {
 	ret := *ps
-	ret.Properties = append([]Property(nil), ret.Properties...)
+	ret.Properties = slices.Clone(ret.Properties)
 	for i, prop := range ret.Properties {
 		ret.Properties[i] = prop.Clone()
 	}
@@ -44,7 +45,7 @@ func (ps *PropertyStruct) Clone() *PropertyStruct {
 
 func (p *Property) Clone() Property {
 	ret := *p
-	ret.Properties = append([]Property(nil), ret.Properties...)
+	ret.Properties = slices.Clone(ret.Properties)
 	for i, prop := range ret.Properties {
 		ret.Properties[i] = prop.Clone()
 	}
