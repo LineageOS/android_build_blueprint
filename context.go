@@ -24,6 +24,7 @@ import (
 	"hash/fnv"
 	"io"
 	"io/ioutil"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -343,12 +344,17 @@ type moduleInfo struct {
 	waitingCount int
 
 	// set during each runMutator
-	splitModules modulesOrAliases
+	splitModules           modulesOrAliases
+	obsoletedByNewVariants bool
 
 	// Used by TransitionMutator implementations
 	transitionVariations     []string
 	currentTransitionMutator string
 	requiredVariationsLock   sync.Mutex
+
+	// outgoingTransitionCache stores the final variation for each dependency, indexed by the source variation
+	// index in transitionVariations and then by the index of the dependency in directDeps
+	outgoingTransitionCache [][]string
 
 	// set during PrepareBuildActions
 	actionDefs localBuildActions
@@ -418,15 +424,7 @@ type Variation struct {
 type variationMap map[string]string
 
 func (vm variationMap) clone() variationMap {
-	if vm == nil {
-		return nil
-	}
-	newVm := make(variationMap)
-	for k, v := range vm {
-		newVm[k] = v
-	}
-
-	return newVm
+	return maps.Clone(vm)
 }
 
 // Compare this variationMap to another one.  Returns true if the every entry in this map
@@ -441,10 +439,7 @@ func (vm variationMap) subsetOf(other variationMap) bool {
 }
 
 func (vm variationMap) equal(other variationMap) bool {
-	if len(vm) != len(other) {
-		return false
-	}
-	return vm.subsetOf(other)
+	return maps.Equal(vm, other)
 }
 
 type singletonInfo struct {
@@ -694,6 +689,14 @@ type IncomingTransitionContext interface {
 	// Config returns the config object that was passed to
 	// Context.PrepareBuildActions.
 	Config() interface{}
+
+	// Provider returns the value for a provider for the target of the dependency edge for which the
+	// transition is being computed.  If the value is not set it returns nil and false.  It panics if
+	// called  before the appropriate mutator or GenerateBuildActions pass for the provider.  The value
+	// returned may be a deep copy of the value originally passed to SetProvider.
+	//
+	// This method shouldn't be used directly, prefer the type-safe android.ModuleProvider instead.
+	Provider(provider AnyProviderKey) (any, bool)
 }
 
 type OutgoingTransitionContext interface {
@@ -708,6 +711,14 @@ type OutgoingTransitionContext interface {
 	// Config returns the config object that was passed to
 	// Context.PrepareBuildActions.
 	Config() interface{}
+
+	// Provider returns the value for a provider for the source of the dependency edge for which the
+	// transition is being computed.  If the value is not set it returns nil and false.  It panics if
+	// called before the appropriate mutator or GenerateBuildActions pass for the provider.  The value
+	// returned may be a deep copy of the value originally passed to SetProvider.
+	//
+	// This method shouldn't be used directly, prefer the type-safe android.ModuleProvider instead.
+	Provider(provider AnyProviderKey) (any, bool)
 }
 
 // TransitionMutator implements a top-down mechanism where a module tells its
@@ -800,15 +811,10 @@ type transitionMutatorImpl struct {
 
 // Adds each argument in items to l if it's not already there.
 func addToStringListIfNotPresent(l []string, items ...string) []string {
-OUTER:
 	for _, i := range items {
-		for _, existing := range l {
-			if existing == i {
-				continue OUTER
-			}
+		if !slices.Contains(l, i) {
+			l = append(l, i)
 		}
-
-		l = append(l, i)
 	}
 
 	return l
@@ -843,19 +849,25 @@ func (t *transitionMutatorImpl) topDownMutator(mctx TopDownMutatorContext) {
 	module.transitionVariations = addToStringListIfNotPresent(module.transitionVariations, mutatorSplits...)
 	sort.Strings(module.transitionVariations)
 
-	for _, srcVariation := range module.transitionVariations {
-		for _, dep := range module.directDeps {
-			finalVariation := t.transition(mctx)(mctx.Module(), srcVariation, dep.module.logicModule, dep.tag)
+	outgoingTransitionCache := make([][]string, len(module.transitionVariations))
+	for srcVariationIndex, srcVariation := range module.transitionVariations {
+		srcVariationTransitionCache := make([]string, len(module.directDeps))
+		for depIndex, dep := range module.directDeps {
+			finalVariation := t.transition(mctx)(mctx.moduleInfo(), srcVariation, dep.module, dep.tag)
+			srcVariationTransitionCache[depIndex] = finalVariation
 			t.addRequiredVariation(dep.module, finalVariation)
 		}
+		outgoingTransitionCache[srcVariationIndex] = srcVariationTransitionCache
 	}
+	module.outgoingTransitionCache = outgoingTransitionCache
 }
 
 type transitionContextImpl struct {
-	source Module
-	dep    Module
-	depTag DependencyTag
-	config interface{}
+	context *Context
+	source  *moduleInfo
+	dep     *moduleInfo
+	depTag  DependencyTag
+	config  interface{}
 }
 
 func (c *transitionContextImpl) DepTag() DependencyTag {
@@ -871,7 +883,11 @@ type outgoingTransitionContextImpl struct {
 }
 
 func (c *outgoingTransitionContextImpl) Module() Module {
-	return c.source
+	return c.source.logicModule
+}
+
+func (c *outgoingTransitionContextImpl) Provider(provider AnyProviderKey) (any, bool) {
+	return c.context.provider(c.source, provider.provider())
 }
 
 type incomingTransitionContextImpl struct {
@@ -879,13 +895,26 @@ type incomingTransitionContextImpl struct {
 }
 
 func (c *incomingTransitionContextImpl) Module() Module {
-	return c.dep
+	return c.dep.logicModule
 }
 
-func (t *transitionMutatorImpl) transition(mctx BaseMutatorContext) Transition {
-	return func(source Module, sourceVariation string, dep Module, depTag DependencyTag) string {
-		tc := transitionContextImpl{source: source, dep: dep, depTag: depTag, config: mctx.Config()}
+func (c *incomingTransitionContextImpl) Provider(provider AnyProviderKey) (any, bool) {
+	return c.context.provider(c.dep, provider.provider())
+}
+
+func (t *transitionMutatorImpl) transition(mctx BaseModuleContext) Transition {
+	return func(source *moduleInfo, sourceVariation string, dep *moduleInfo, depTag DependencyTag) string {
+		tc := transitionContextImpl{
+			context: mctx.base().context,
+			source:  source,
+			dep:     dep,
+			depTag:  depTag,
+			config:  mctx.Config(),
+		}
 		outgoingVariation := t.mutator.OutgoingTransition(&outgoingTransitionContextImpl{tc}, sourceVariation)
+		if mctx.Failed() {
+			return outgoingVariation
+		}
 		finalVariation := t.mutator.IncomingTransition(&incomingTransitionContextImpl{tc}, outgoingVariation)
 		return finalVariation
 	}
@@ -897,7 +926,9 @@ func (t *transitionMutatorImpl) bottomUpMutator(mctx BottomUpMutatorContext) {
 	// only time interaction between multiple modules is required is during the
 	// computation of the variations required by a given module.
 	variations := mc.module.transitionVariations
+	outgoingTransitionCache := mc.module.outgoingTransitionCache
 	mc.module.transitionVariations = nil
+	mc.module.outgoingTransitionCache = nil
 	mc.module.currentTransitionMutator = ""
 
 	if len(variations) < 1 {
@@ -907,9 +938,10 @@ func (t *transitionMutatorImpl) bottomUpMutator(mctx BottomUpMutatorContext) {
 
 	if len(variations) == 1 && variations[0] == "" {
 		// Module is not split, just apply the transition
-		mc.applyTransition(t.transition(mctx))
+		mc.context.convertDepsToVariation(mc.module, 0,
+			chooseDepByIndexes(mc.mutator.name, outgoingTransitionCache))
 	} else {
-		mc.createVariationsWithTransition(t.transition(mctx), variations...)
+		mc.createVariationsWithTransition(variations, outgoingTransitionCache)
 	}
 }
 
@@ -1719,12 +1751,12 @@ func newVariant(module *moduleInfo, mutatorName string, variationName string,
 	return variant{newVariantName, newVariations, newDependencyVariations}
 }
 
-func (c *Context) createVariations(origModule *moduleInfo, mutatorName string,
+func (c *Context) createVariations(origModule *moduleInfo, mutator *mutatorInfo,
 	depChooser depChooser, variationNames []string, local bool) (modulesOrAliases, []error) {
 
 	if len(variationNames) == 0 {
 		panic(fmt.Errorf("mutator %q passed zero-length variation list for module %q",
-			mutatorName, origModule.Name()))
+			mutator.name, origModule.Name()))
 	}
 
 	var newModules modulesOrAliases
@@ -1746,18 +1778,18 @@ func (c *Context) createVariations(origModule *moduleInfo, mutatorName string,
 
 		m := *origModule
 		newModule := &m
-		newModule.directDeps = append([]depInfo(nil), origModule.directDeps...)
+		newModule.directDeps = slices.Clone(origModule.directDeps)
 		newModule.reverseDeps = nil
 		newModule.forwardDeps = nil
 		newModule.logicModule = newLogicModule
-		newModule.variant = newVariant(origModule, mutatorName, variationName, local)
+		newModule.variant = newVariant(origModule, mutator.name, variationName, local)
 		newModule.properties = newProperties
-		newModule.providers = append([]interface{}(nil), origModule.providers...)
-		newModule.providerInitialValueHashes = append([]uint64(nil), origModule.providerInitialValueHashes...)
+		newModule.providers = slices.Clone(origModule.providers)
+		newModule.providerInitialValueHashes = slices.Clone(origModule.providerInitialValueHashes)
 
 		newModules = append(newModules, newModule)
 
-		newErrs := c.convertDepsToVariation(newModule, depChooser)
+		newErrs := c.convertDepsToVariation(newModule, i, depChooser)
 		if len(newErrs) > 0 {
 			errs = append(errs, newErrs...)
 		}
@@ -1765,7 +1797,7 @@ func (c *Context) createVariations(origModule *moduleInfo, mutatorName string,
 
 	// Mark original variant as invalid.  Modules that depend on this module will still
 	// depend on origModule, but we'll fix it when the mutator is called on them.
-	origModule.logicModule = nil
+	origModule.obsoletedByNewVariants = true
 	origModule.splitModules = newModules
 
 	atomic.AddUint32(&c.depsModified, 1)
@@ -1773,37 +1805,12 @@ func (c *Context) createVariations(origModule *moduleInfo, mutatorName string,
 	return newModules, errs
 }
 
-type depChooser func(source *moduleInfo, dep depInfo) (*moduleInfo, string)
+type depChooser func(source *moduleInfo, variationIndex, depIndex int, dep depInfo) (*moduleInfo, string)
 
 // This function is called for every dependency edge to determine which
 // variation of the dependency is needed. Its inputs are the depending module,
 // its variation, the dependency and the dependency tag.
-type Transition func(source Module, sourceVariation string, dep Module, depTag DependencyTag) string
-
-func chooseDepByTransition(mutatorName string, transition Transition) depChooser {
-	return func(source *moduleInfo, dep depInfo) (*moduleInfo, string) {
-		sourceVariation := source.variant.variations[mutatorName]
-		depLogicModule := dep.module.logicModule
-		if depLogicModule == nil {
-			// This is really a lie because the original dependency before the split
-			// went away when it was split. We choose an arbitrary split module
-			// instead and hope that whatever information the transition wants from it
-			// is the same as in the original one
-			// TODO(lberki): this can be fixed by calling transition() once and saving
-			// its results somewhere
-			depLogicModule = dep.module.splitModules[0].moduleOrAliasTarget().logicModule
-		}
-
-		desiredVariation := transition(source.logicModule, sourceVariation, depLogicModule, dep.tag)
-		for _, m := range dep.module.splitModules {
-			if m.moduleOrAliasVariant().variations[mutatorName] == desiredVariation {
-				return m.moduleOrAliasTarget(), ""
-			}
-		}
-
-		return nil, desiredVariation
-	}
-}
+type Transition func(source *moduleInfo, sourceVariation string, dep *moduleInfo, depTag DependencyTag) string
 
 func chooseDep(candidates modulesOrAliases, mutatorName, variationName string, defaultVariationName *string) (*moduleInfo, string) {
 	for _, m := range candidates {
@@ -1824,24 +1831,31 @@ func chooseDep(candidates modulesOrAliases, mutatorName, variationName string, d
 	return nil, variationName
 }
 
+func chooseDepByIndexes(mutatorName string, variations [][]string) depChooser {
+	return func(source *moduleInfo, variationIndex, depIndex int, dep depInfo) (*moduleInfo, string) {
+		desiredVariation := variations[variationIndex][depIndex]
+		return chooseDep(dep.module.splitModules, mutatorName, desiredVariation, nil)
+	}
+}
+
 func chooseDepExplicit(mutatorName string,
 	variationName string, defaultVariationName *string) depChooser {
-	return func(source *moduleInfo, dep depInfo) (*moduleInfo, string) {
+	return func(source *moduleInfo, variationIndex, depIndex int, dep depInfo) (*moduleInfo, string) {
 		return chooseDep(dep.module.splitModules, mutatorName, variationName, defaultVariationName)
 	}
 }
 
 func chooseDepInherit(mutatorName string, defaultVariationName *string) depChooser {
-	return func(source *moduleInfo, dep depInfo) (*moduleInfo, string) {
+	return func(source *moduleInfo, variationIndex, depIndex int, dep depInfo) (*moduleInfo, string) {
 		sourceVariation := source.variant.variations[mutatorName]
 		return chooseDep(dep.module.splitModules, mutatorName, sourceVariation, defaultVariationName)
 	}
 }
 
-func (c *Context) convertDepsToVariation(module *moduleInfo, depChooser depChooser) (errs []error) {
+func (c *Context) convertDepsToVariation(module *moduleInfo, variationIndex int, depChooser depChooser) (errs []error) {
 	for i, dep := range module.directDeps {
-		if dep.module.logicModule == nil {
-			newDep, missingVariation := depChooser(module, dep)
+		if dep.module.obsoletedByNewVariants {
+			newDep, missingVariation := depChooser(module, variationIndex, i, dep)
 			if newDep == nil {
 				errs = append(errs, &BlueprintError{
 					Err: fmt.Errorf("failed to find variation %q for module %q needed by %q",
@@ -3072,6 +3086,11 @@ func (c *Context) runMutator(config interface{}, mutator *mutatorInfo,
 		deps       []string
 	}
 
+	type newVariationPair struct {
+		newVariations   modulesOrAliases
+		origLogicModule Module
+	}
+
 	reverseDeps := make(map[*moduleInfo][]depInfo)
 	var rename []rename
 	var replace []replace
@@ -3079,7 +3098,7 @@ func (c *Context) runMutator(config interface{}, mutator *mutatorInfo,
 
 	errsCh := make(chan []error)
 	globalStateCh := make(chan globalStateChange)
-	newVariationsCh := make(chan modulesOrAliases)
+	newVariationsCh := make(chan newVariationPair)
 	done := make(chan bool)
 
 	c.depsModified = 0
@@ -3095,9 +3114,11 @@ func (c *Context) runMutator(config interface{}, mutator *mutatorInfo,
 				config:  config,
 				module:  module,
 			},
-			name:    mutator.name,
+			mutator: mutator,
 			pauseCh: pause,
 		}
+
+		origLogicModule := module.logicModule
 
 		module.startedMutator = mutator
 
@@ -3124,7 +3145,7 @@ func (c *Context) runMutator(config interface{}, mutator *mutatorInfo,
 		}
 
 		if len(mctx.newVariations) > 0 {
-			newVariationsCh <- mctx.newVariations
+			newVariationsCh <- newVariationPair{mctx.newVariations, origLogicModule}
 		}
 
 		if len(mctx.reverseDeps) > 0 || len(mctx.replace) > 0 || len(mctx.rename) > 0 || len(mctx.newModules) > 0 || len(mctx.ninjaFileDeps) > 0 {
@@ -3139,6 +3160,8 @@ func (c *Context) runMutator(config interface{}, mutator *mutatorInfo,
 
 		return false
 	}
+
+	var obsoleteLogicModules []Module
 
 	// Process errs and reverseDeps in a single goroutine
 	go func() {
@@ -3155,7 +3178,10 @@ func (c *Context) runMutator(config interface{}, mutator *mutatorInfo,
 				newModules = append(newModules, globalStateChange.newModules...)
 				deps = append(deps, globalStateChange.deps...)
 			case newVariations := <-newVariationsCh:
-				for _, moduleOrAlias := range newVariations {
+				if newVariations.origLogicModule != newVariations.newVariations[0].module().logicModule {
+					obsoleteLogicModules = append(obsoleteLogicModules, newVariations.origLogicModule)
+				}
+				for _, moduleOrAlias := range newVariations.newVariations {
 					if m := moduleOrAlias.module(); m != nil {
 						newModuleInfo[m.logicModule] = m
 					}
@@ -3187,6 +3213,10 @@ func (c *Context) runMutator(config interface{}, mutator *mutatorInfo,
 		return nil, errs
 	}
 
+	for _, obsoleteLogicModule := range obsoleteLogicModules {
+		delete(newModuleInfo, obsoleteLogicModule)
+	}
+
 	c.moduleInfo = newModuleInfo
 
 	for _, group := range c.moduleGroups {
@@ -3205,12 +3235,12 @@ func (c *Context) runMutator(config interface{}, mutator *mutatorInfo,
 			// Fix up any remaining dependencies on modules that were split into variants
 			// by replacing them with the first variant
 			for j, dep := range module.directDeps {
-				if dep.module.logicModule == nil {
+				if dep.module.obsoletedByNewVariants {
 					module.directDeps[j].module = dep.module.splitModules.firstModule()
 				}
 			}
 
-			if module.createdBy != nil && module.createdBy.logicModule == nil {
+			if module.createdBy != nil && module.createdBy.obsoletedByNewVariants {
 				module.createdBy = module.createdBy.splitModules.firstModule()
 			}
 
@@ -3235,7 +3265,7 @@ func (c *Context) runMutator(config interface{}, mutator *mutatorInfo,
 		// change inside the loop
 		for i := 0; i < len(group.modules); i++ {
 			if alias := group.modules[i].alias(); alias != nil {
-				if alias.target.logicModule == nil {
+				if alias.target.obsoletedByNewVariants {
 					newTarget := findAliasTarget(alias.target.variant)
 					if newTarget != nil {
 						alias.target = newTarget
