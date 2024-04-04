@@ -189,6 +189,7 @@ const (
 	ListType
 	MapType
 	NotEvaluatedType
+	UnsetType
 )
 
 func (t Type) String() string {
@@ -205,6 +206,8 @@ func (t Type) String() string {
 		return "map"
 	case NotEvaluatedType:
 		return "notevaluated"
+	case UnsetType:
+		return "unset"
 	default:
 		panic(fmt.Errorf("Unknown type %d", t))
 	}
@@ -596,13 +599,14 @@ func (s SelectType) String() string {
 }
 
 type Select struct {
-	KeywordPos scanner.Position // the keyword "select"
-	Typ        SelectType
-	Condition  String
-	LBracePos  scanner.Position
-	RBracePos  scanner.Position
-	Cases      []*SelectCase // the case statements
-	Append     Expression
+	KeywordPos     scanner.Position // the keyword "select"
+	Typ            SelectType
+	Condition      String
+	LBracePos      scanner.Position
+	RBracePos      scanner.Position
+	Cases          []*SelectCase // the case statements
+	Append         Expression
+	ExpressionType Type
 }
 
 func (s *Select) Pos() scanner.Position { return s.KeywordPos }
@@ -629,16 +633,10 @@ func (s *Select) String() string {
 }
 
 func (s *Select) Type() Type {
-	if len(s.Cases) == 0 {
-		panic("select with no cases")
+	if s.ExpressionType == UnsetType && s.Append != nil {
+		return s.Append.Type()
 	}
-	ty := s.Cases[0].Value.Type()
-	for _, c := range s.Cases[1:] {
-		if c.Value.Type() != ty {
-			panic(fmt.Sprintf("Found select statement with differing types %q and %q in its cases", ty.String(), c.Value.Type().String()))
-		}
-	}
-	return ty
+	return s.ExpressionType
 }
 
 type SelectCase struct {
@@ -660,3 +658,36 @@ func (c *SelectCase) String() string {
 
 func (c *SelectCase) Pos() scanner.Position { return c.Pattern.LiteralPos }
 func (c *SelectCase) End() scanner.Position { return c.Value.End() }
+
+// UnsetProperty is the expression type of the "unset" keyword that can be
+// used in select statements to make the property unset. For example:
+//
+//	my_module_type {
+//	  name: "foo",
+//	  some_prop: select(soong_config_variable("my_namespace", "my_var"), {
+//	    "foo": unset,
+//	    "default": "bar",
+//	  })
+//	}
+type UnsetProperty struct {
+	Position scanner.Position
+}
+
+func (n UnsetProperty) Copy() Expression {
+	return UnsetProperty{Position: n.Position}
+}
+
+func (n UnsetProperty) String() string {
+	return "unset"
+}
+
+func (n UnsetProperty) Type() Type {
+	return UnsetType
+}
+
+func (n UnsetProperty) Eval() Expression {
+	return UnsetProperty{Position: n.Position}
+}
+
+func (n UnsetProperty) Pos() scanner.Position { return n.Position }
+func (n UnsetProperty) End() scanner.Position { return n.Position }

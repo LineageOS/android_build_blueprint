@@ -187,7 +187,11 @@ func (p *printer) printSelect(s *Select) {
 		}
 		p.printToken(":", c.ColonPos)
 		p.requestSpace()
-		p.printExpression(c.Value)
+		if unset, ok := c.Value.(UnsetProperty); ok {
+			p.printToken(unset.String(), unset.Pos())
+		} else {
+			p.printExpression(c.Value)
+		}
 		p.printToken(",", c.Value.Pos())
 	}
 	p.requestNewline()

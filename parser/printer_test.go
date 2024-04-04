@@ -637,6 +637,73 @@ foo {
 }
 `,
 	},
+	{
+		name: "Select with unset property",
+		input: `
+foo {
+    stuff: select(soong_config_variable("my_namespace", "my_variable"), {
+        "foo": unset,
+        _: "c2",
+    }),
+}
+`,
+		output: `
+foo {
+    stuff: select(soong_config_variable("my_namespace", "my_variable"), {
+        "foo": unset,
+        _: "c2",
+    }),
+}
+`,
+	},
+	{
+		name: "Select with only unsets is removed",
+		input: `
+foo {
+    stuff: select(soong_config_variable("my_namespace", "my_variable"), {
+        "foo": unset,
+        _: unset,
+    }),
+}
+`,
+		output: `
+foo {
+
+}
+`,
+	},
+	{
+		name: "Additions of unset selects are removed",
+		input: `
+foo {
+    stuff: select(soong_config_variable("my_namespace", "my_variable"), {
+        "foo": "a",
+        _: "b",
+    }) + select(soong_config_variable("my_namespace", "my_variable2"), {
+        "foo": unset,
+        _: unset,
+    }) + select(soong_config_variable("my_namespace", "my_variable3"), {
+        "foo": "c",
+        _: "d",
+    }),
+}
+`,
+		// TODO(b/323382414): This is not good formatting, revisit later.
+		// But at least it removes the useless middle select
+		output: `
+foo {
+    stuff: select(soong_config_variable("my_namespace", "my_variable"), {
+        "foo": "a",
+        _: "b",
+    }) +
+
+        select(soong_config_variable("my_namespace", "my_variable3"), {
+            "foo": "c",
+            _: "d",
+        }),
+}
+`,
+	},
 }
 
 func TestPrinter(t *testing.T) {
