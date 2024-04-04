@@ -567,7 +567,7 @@ foo {
         // test2
         "b": "b2",
         // test3
-        _: "c2",
+        default: "c2",
     }),
 }
 `,
@@ -579,7 +579,7 @@ foo {
         // test2
         "b": "b2",
         // test3
-        _: "c2",
+        default: "c2",
     }),
 }
 `,
@@ -591,7 +591,7 @@ foo {
 foo {
     stuff: select(soong_config_variable("my_namespace", "my_variable"), {
         // test2
-        _: "c2",
+        default: "c2",
     }),
 }
 `,
@@ -612,11 +612,11 @@ foo {
         // test2
         "b": "b2",
         // test3
-        _: "c2",
+        default: "c2",
     }) + select(release_variable("RELEASE_TEST"), {
         "d": "d2",
         "e": "e2",
-        _: "f2",
+        default: "f2",
     }),
 }
 `,
@@ -628,11 +628,11 @@ foo {
         // test2
         "b": "b2",
         // test3
-        _: "c2",
+        default: "c2",
     }) + select(release_variable("RELEASE_TEST"), {
         "d": "d2",
         "e": "e2",
-        _: "f2",
+        default: "f2",
     }),
 }
 `,
@@ -643,7 +643,7 @@ foo {
 foo {
     stuff: select(soong_config_variable("my_namespace", "my_variable"), {
         "foo": unset,
-        _: "c2",
+        default: "c2",
     }),
 }
 `,
@@ -651,7 +651,7 @@ foo {
 foo {
     stuff: select(soong_config_variable("my_namespace", "my_variable"), {
         "foo": unset,
-        _: "c2",
+        default: "c2",
     }),
 }
 `,
@@ -662,7 +662,7 @@ foo {
 foo {
     stuff: select(soong_config_variable("my_namespace", "my_variable"), {
         "foo": unset,
-        _: unset,
+        default: unset,
     }),
 }
 `,
@@ -678,13 +678,13 @@ foo {
 foo {
     stuff: select(soong_config_variable("my_namespace", "my_variable"), {
         "foo": "a",
-        _: "b",
+        default: "b",
     }) + select(soong_config_variable("my_namespace", "my_variable2"), {
         "foo": unset,
-        _: unset,
+        default: unset,
     }) + select(soong_config_variable("my_namespace", "my_variable3"), {
         "foo": "c",
-        _: "d",
+        default: "d",
     }),
 }
 `,
@@ -694,12 +694,12 @@ foo {
 foo {
     stuff: select(soong_config_variable("my_namespace", "my_variable"), {
         "foo": "a",
-        _: "b",
+        default: "b",
     }) +
 
         select(soong_config_variable("my_namespace", "my_variable3"), {
             "foo": "c",
-            _: "d",
+            default: "d",
         }),
 }
 `,

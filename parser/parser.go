@@ -214,6 +214,14 @@ func (p *parser) parseDefinitions() (defs []Definition) {
 func (p *parser) parseAssignment(name string, namePos scanner.Position,
 	assigner string) (assignment *Assignment) {
 
+	// These are used as keywords in select statements, prevent making variables
+	// with the same name to avoid any confusion.
+	switch name {
+	case "default", "unset":
+		p.errorf("'default' and 'unset' are reserved keywords, and cannot be used as variable names")
+		return nil
+	}
+
 	assignment = new(Assignment)
 
 	pos := p.scanner.Position
@@ -639,8 +647,8 @@ func (p *parser) parseSelect() Expression {
 
 	// Default must be last
 	if p.tok == scanner.Ident {
-		if p.scanner.TokenText() != "_" {
-			p.errorf("select cases can either be quoted strings or '_' to match any value")
+		if p.scanner.TokenText() != "default" {
+			p.errorf("select cases can either be quoted strings or 'default' to match any value")
 			return nil
 		}
 		c := &SelectCase{Pattern: String{

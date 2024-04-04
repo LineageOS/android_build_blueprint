@@ -183,7 +183,7 @@ func (p *printer) printSelect(s *Select) {
 		if c.Pattern.Value != "__soong_conditions_default__" {
 			p.printToken(strconv.Quote(c.Pattern.Value), c.Pattern.LiteralPos)
 		} else {
-			p.printToken("_", c.Pattern.LiteralPos)
+			p.printToken("default", c.Pattern.LiteralPos)
 		}
 		p.printToken(":", c.ColonPos)
 		p.requestSpace()
