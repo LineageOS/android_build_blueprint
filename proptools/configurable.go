@@ -83,31 +83,32 @@ type appendWrapper[T ConfigurableElements] struct {
 	replace bool
 }
 
-func (c *Configurable[T]) GetType() parser.SelectType {
-	return c.typ
-}
-
-func (c *Configurable[T]) GetCondition() string {
-	return c.condition
-}
-
-// Evaluate returns the final value for the configurable property.
-// A configurable property may be unset, in which case Evaluate will return nil.
-func (c *Configurable[T]) Evaluate(evaluator ConfigurableEvaluator) *T {
+// Get returns the final value for the configurable property.
+// A configurable property may be unset, in which case Get will return nil.
+func (c *Configurable[T]) Get(evaluator ConfigurableEvaluator) *T {
 	if c == nil || c.appendWrapper == nil {
 		return nil
 	}
 	if c.appendWrapper.replace {
 		return replaceConfiguredValues(
 			c.evaluateNonTransitive(evaluator),
-			c.appendWrapper.append.Evaluate(evaluator),
+			c.appendWrapper.append.Get(evaluator),
 		)
 	} else {
 		return appendConfiguredValues(
 			c.evaluateNonTransitive(evaluator),
-			c.appendWrapper.append.Evaluate(evaluator),
+			c.appendWrapper.append.Get(evaluator),
 		)
 	}
+}
+
+// GetOrDefault is the same as Get, but will return the provided default value if the property was unset.
+func (c *Configurable[T]) GetOrDefault(evaluator ConfigurableEvaluator, defaultValue T) T {
+	result := c.Get(evaluator)
+	if result != nil {
+		return *result
+	}
+	return defaultValue
 }
 
 func (c *Configurable[T]) evaluateNonTransitive(evaluator ConfigurableEvaluator) *T {
