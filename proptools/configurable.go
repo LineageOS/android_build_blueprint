@@ -79,7 +79,8 @@ var _ configurableMarker = Configurable[string]{}.marker
 // appendWrapper exists so that we can set the value of append
 // from a non-pointer method receiver. (setAppend)
 type appendWrapper[T ConfigurableElements] struct {
-	append Configurable[T]
+	append  Configurable[T]
+	replace bool
 }
 
 func (c *Configurable[T]) GetType() parser.SelectType {
@@ -96,12 +97,17 @@ func (c *Configurable[T]) Evaluate(evaluator ConfigurableEvaluator) *T {
 	if c == nil || c.appendWrapper == nil {
 		return nil
 	}
-	return mergeConfiguredValues(
-		c.evaluateNonTransitive(evaluator),
-		c.appendWrapper.append.Evaluate(evaluator),
-		c.propertyName,
-		evaluator,
-	)
+	if c.appendWrapper.replace {
+		return replaceConfiguredValues(
+			c.evaluateNonTransitive(evaluator),
+			c.appendWrapper.append.Evaluate(evaluator),
+		)
+	} else {
+		return appendConfiguredValues(
+			c.evaluateNonTransitive(evaluator),
+			c.appendWrapper.append.Evaluate(evaluator),
+		)
+	}
 }
 
 func (c *Configurable[T]) evaluateNonTransitive(evaluator ConfigurableEvaluator) *T {
@@ -142,7 +148,7 @@ func (c *Configurable[T]) evaluateNonTransitive(evaluator ConfigurableEvaluator)
 	return nil
 }
 
-func mergeConfiguredValues[T ConfigurableElements](a, b *T, propertyName string, evalutor ConfigurableEvaluator) *T {
+func appendConfiguredValues[T ConfigurableElements](a, b *T) *T {
 	if a == nil && b == nil {
 		return nil
 	}
@@ -188,12 +194,19 @@ func mergeConfiguredValues[T ConfigurableElements](a, b *T, propertyName string,
 	}
 }
 
+func replaceConfiguredValues[T ConfigurableElements](a, b *T) *T {
+	if b != nil {
+		return b
+	}
+	return a
+}
+
 // configurableReflection is an interface that exposes some methods that are
 // helpful when working with reflect.Values of Configurable objects, used by
 // the property unpacking code. You can't call unexported methods from reflection,
 // (at least without unsafe pointer trickery) so this is the next best thing.
 type configurableReflection interface {
-	setAppend(append any)
+	setAppend(append any, replace bool)
 	configuredType() reflect.Type
 	cloneToReflectValuePtr() reflect.Value
 	isEmpty() bool
@@ -216,11 +229,12 @@ func (c *Configurable[T]) initialize(propertyName string, typ parser.SelectType,
 	c.appendWrapper = &appendWrapper[T]{}
 }
 
-func (c Configurable[T]) setAppend(append any) {
+func (c Configurable[T]) setAppend(append any, replace bool) {
 	if c.appendWrapper.append.isEmpty() {
 		c.appendWrapper.append = append.(Configurable[T])
+		c.appendWrapper.replace = replace
 	} else {
-		c.appendWrapper.append.setAppend(append)
+		c.appendWrapper.append.setAppend(append, replace)
 	}
 }
 
@@ -248,6 +262,7 @@ func (c *Configurable[T]) clone() *Configurable[T] {
 		inner = &appendWrapper[T]{}
 		if !c.appendWrapper.append.isEmpty() {
 			inner.append = *c.appendWrapper.append.clone()
+			inner.replace = c.appendWrapper.replace
 		}
 	}
 
