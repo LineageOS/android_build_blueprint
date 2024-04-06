@@ -214,6 +214,14 @@ func (p *parser) parseDefinitions() (defs []Definition) {
 func (p *parser) parseAssignment(name string, namePos scanner.Position,
 	assigner string) (assignment *Assignment) {
 
+	// These are used as keywords in select statements, prevent making variables
+	// with the same name to avoid any confusion.
+	switch name {
+	case "default", "unset":
+		p.errorf("'default' and 'unset' are reserved keywords, and cannot be used as variable names")
+		return nil
+	}
+
 	assignment = new(Assignment)
 
 	pos := p.scanner.Position
@@ -289,7 +297,12 @@ func (p *parser) parseModule(typ string, typPos scanner.Position) *Module {
 func (p *parser) parsePropertyList(isModule, compat bool) (properties []*Property) {
 	for p.tok == scanner.Ident {
 		property := p.parseProperty(isModule, compat)
-		properties = append(properties, property)
+
+		// If a property is set to an empty select or a select where all branches are "unset",
+		// skip emitting the property entirely.
+		if property.Value.Type() != UnsetType {
+			properties = append(properties, property)
+		}
 
 		if p.tok != ',' {
 			// There was no comma, so the list is done.
@@ -350,7 +363,14 @@ func (p *parser) parseExpression() (value Expression) {
 }
 
 func (p *parser) evaluateOperator(value1, value2 Expression, operator rune,
-	pos scanner.Position) (*Operator, error) {
+	pos scanner.Position) (Expression, error) {
+
+	if value1.Type() == UnsetType {
+		return value2, nil
+	}
+	if value2.Type() == UnsetType {
+		return value1, nil
+	}
 
 	value := value1
 
@@ -454,7 +474,7 @@ func (p *parser) addMaps(map1, map2 []*Property, pos scanner.Position) ([]*Prope
 	return ret, nil
 }
 
-func (p *parser) parseOperator(value1 Expression) *Operator {
+func (p *parser) parseOperator(value1 Expression) Expression {
 	operator := p.tok
 	pos := p.scanner.Position
 	p.accept(operator)
@@ -595,6 +615,7 @@ func (p *parser) parseSelect() Expression {
 		return nil
 	}
 
+	hasNonUnsetValue := false
 	for p.tok == scanner.String {
 		c := &SelectCase{}
 		if s := p.parseStringValue(); s != nil {
@@ -610,7 +631,13 @@ func (p *parser) parseSelect() Expression {
 		if !p.accept(':') {
 			return nil
 		}
-		c.Value = p.parseExpression()
+		if p.tok == scanner.Ident && p.scanner.TokenText() == "unset" {
+			c.Value = UnsetProperty{Position: p.scanner.Position}
+			p.accept(scanner.Ident)
+		} else {
+			hasNonUnsetValue = true
+			c.Value = p.parseExpression()
+		}
 		if !p.accept(',') {
 			return nil
 		}
@@ -620,8 +647,8 @@ func (p *parser) parseSelect() Expression {
 
 	// Default must be last
 	if p.tok == scanner.Ident {
-		if p.scanner.TokenText() != "_" {
-			p.errorf("select cases can either be quoted strings or '_' to match any value")
+		if p.scanner.TokenText() != "default" {
+			p.errorf("select cases can either be quoted strings or 'default' to match any value")
 			return nil
 		}
 		c := &SelectCase{Pattern: String{
@@ -633,12 +660,41 @@ func (p *parser) parseSelect() Expression {
 		if !p.accept(':') {
 			return nil
 		}
-		c.Value = p.parseExpression()
+		if p.tok == scanner.Ident && p.scanner.TokenText() == "unset" {
+			c.Value = UnsetProperty{Position: p.scanner.Position}
+			p.accept(scanner.Ident)
+		} else {
+			hasNonUnsetValue = true
+			c.Value = p.parseExpression()
+		}
 		if !p.accept(',') {
 			return nil
 		}
 		result.Cases = append(result.Cases, c)
 	}
+
+	// If all branches have the value "unset", then this is equivalent
+	// to an empty select.
+	if !hasNonUnsetValue {
+		result.Typ = SelectTypeUnconfigured
+		result.Condition.Value = ""
+		result.Cases = nil
+	}
+
+	ty := UnsetType
+	for _, c := range result.Cases {
+		otherTy := c.Value.Type()
+		// Any other type can override UnsetType
+		if ty == UnsetType {
+			ty = otherTy
+		}
+		if otherTy != UnsetType && otherTy != ty {
+			p.errorf("Found select statement with differing types %q and %q in its cases", ty.String(), otherTy.String())
+			return nil
+		}
+	}
+
+	result.ExpressionType = ty
 
 	result.RBracePos = p.scanner.Position
 	if !p.accept('}') {

@@ -183,11 +183,15 @@ func (p *printer) printSelect(s *Select) {
 		if c.Pattern.Value != "__soong_conditions_default__" {
 			p.printToken(strconv.Quote(c.Pattern.Value), c.Pattern.LiteralPos)
 		} else {
-			p.printToken("_", c.Pattern.LiteralPos)
+			p.printToken("default", c.Pattern.LiteralPos)
 		}
 		p.printToken(":", c.ColonPos)
 		p.requestSpace()
-		p.printExpression(c.Value)
+		if unset, ok := c.Value.(UnsetProperty); ok {
+			p.printToken(unset.String(), unset.Pos())
+		} else {
+			p.printExpression(c.Value)
+		}
 		p.printToken(",", c.Value.Pos())
 	}
 	p.requestNewline()

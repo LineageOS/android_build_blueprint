@@ -69,7 +69,7 @@ type Configurable[T ConfigurableElements] struct {
 	propertyName  string
 	typ           parser.SelectType
 	condition     string
-	cases         map[string]T
+	cases         map[string]*T
 	appendWrapper *appendWrapper[T]
 }
 
@@ -119,12 +119,12 @@ func (c *Configurable[T]) evaluateNonTransitive(evaluator ConfigurableEvaluator)
 			}
 			panic(fmt.Sprintf("Expected the single branch of an unconfigured select to be %q, got %q", default_select_branch_name, actual))
 		}
-		return &result
+		return result
 	}
 	val, defined := evaluator.EvaluateConfiguration(c.typ, c.propertyName, c.condition)
 	if !defined {
 		if result, ok := c.cases[default_select_branch_name]; ok {
-			return &result
+			return result
 		}
 		evaluator.PropertyErrorf(c.propertyName, "%s %q was not defined", c.typ.String(), c.condition)
 		return nil
@@ -133,10 +133,10 @@ func (c *Configurable[T]) evaluateNonTransitive(evaluator ConfigurableEvaluator)
 		panic("Evaluator cannot return the default branch")
 	}
 	if result, ok := c.cases[val]; ok {
-		return &result
+		return result
 	}
 	if result, ok := c.cases[default_select_branch_name]; ok {
-		return &result
+		return result
 	}
 	evaluator.PropertyErrorf(c.propertyName, "%s %q had value %q, which was not handled by the select statement", c.typ.String(), c.condition, val)
 	return nil
@@ -212,7 +212,7 @@ func (c *Configurable[T]) initialize(propertyName string, typ parser.SelectType,
 	c.propertyName = propertyName
 	c.typ = typ
 	c.condition = condition
-	c.cases = cases.(map[string]T)
+	c.cases = cases.(map[string]*T)
 	c.appendWrapper = &appendWrapper[T]{}
 }
 
@@ -251,7 +251,7 @@ func (c *Configurable[T]) clone() *Configurable[T] {
 		}
 	}
 
-	casesCopy := make(map[string]T, len(c.cases))
+	casesCopy := make(map[string]*T, len(c.cases))
 	for k, v := range c.cases {
 		casesCopy[k] = copyConfiguredValue(v)
 	}
@@ -265,10 +265,14 @@ func (c *Configurable[T]) clone() *Configurable[T] {
 	}
 }
 
-func copyConfiguredValue[T ConfigurableElements](t T) T {
-	switch t2 := any(t).(type) {
+func copyConfiguredValue[T ConfigurableElements](t *T) *T {
+	if t == nil {
+		return nil
+	}
+	switch t2 := any(*t).(type) {
 	case []string:
-		return any(slices.Clone(t2)).(T)
+		result := any(slices.Clone(t2)).(T)
+		return &result
 	default:
 		return t
 	}

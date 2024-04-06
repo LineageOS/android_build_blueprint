@@ -567,7 +567,7 @@ foo {
         // test2
         "b": "b2",
         // test3
-        _: "c2",
+        default: "c2",
     }),
 }
 `,
@@ -579,7 +579,7 @@ foo {
         // test2
         "b": "b2",
         // test3
-        _: "c2",
+        default: "c2",
     }),
 }
 `,
@@ -591,7 +591,7 @@ foo {
 foo {
     stuff: select(soong_config_variable("my_namespace", "my_variable"), {
         // test2
-        _: "c2",
+        default: "c2",
     }),
 }
 `,
@@ -612,11 +612,11 @@ foo {
         // test2
         "b": "b2",
         // test3
-        _: "c2",
+        default: "c2",
     }) + select(release_variable("RELEASE_TEST"), {
         "d": "d2",
         "e": "e2",
-        _: "f2",
+        default: "f2",
     }),
 }
 `,
@@ -628,12 +628,79 @@ foo {
         // test2
         "b": "b2",
         // test3
-        _: "c2",
+        default: "c2",
     }) + select(release_variable("RELEASE_TEST"), {
         "d": "d2",
         "e": "e2",
-        _: "f2",
+        default: "f2",
     }),
+}
+`,
+	},
+	{
+		name: "Select with unset property",
+		input: `
+foo {
+    stuff: select(soong_config_variable("my_namespace", "my_variable"), {
+        "foo": unset,
+        default: "c2",
+    }),
+}
+`,
+		output: `
+foo {
+    stuff: select(soong_config_variable("my_namespace", "my_variable"), {
+        "foo": unset,
+        default: "c2",
+    }),
+}
+`,
+	},
+	{
+		name: "Select with only unsets is removed",
+		input: `
+foo {
+    stuff: select(soong_config_variable("my_namespace", "my_variable"), {
+        "foo": unset,
+        default: unset,
+    }),
+}
+`,
+		output: `
+foo {
+
+}
+`,
+	},
+	{
+		name: "Additions of unset selects are removed",
+		input: `
+foo {
+    stuff: select(soong_config_variable("my_namespace", "my_variable"), {
+        "foo": "a",
+        default: "b",
+    }) + select(soong_config_variable("my_namespace", "my_variable2"), {
+        "foo": unset,
+        default: unset,
+    }) + select(soong_config_variable("my_namespace", "my_variable3"), {
+        "foo": "c",
+        default: "d",
+    }),
+}
+`,
+		// TODO(b/323382414): This is not good formatting, revisit later.
+		// But at least it removes the useless middle select
+		output: `
+foo {
+    stuff: select(soong_config_variable("my_namespace", "my_variable"), {
+        "foo": "a",
+        default: "b",
+    }) +
+
+        select(soong_config_variable("my_namespace", "my_variable3"), {
+            "foo": "c",
+            default: "d",
+        }),
 }
 `,
 	},
