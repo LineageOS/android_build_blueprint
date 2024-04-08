@@ -154,9 +154,18 @@ func ExtendMatchingProperties(dst []interface{}, src interface{},
 type Order int
 
 const (
+	// When merging properties, strings and lists will be concatenated, and booleans will be OR'd together
 	Append Order = iota
+	// Same as append, but acts as if the arguments to the extend* functions were swapped. The src value will be
+	// prepended to the dst value instead of appended.
 	Prepend
+	// Instead of concatenating/ORing properties, the dst value will be completely replaced by the src value.
+	// Replace currently only works for slices, maps, and configurable properties. Due to legacy behavior,
+	// pointer properties will always act as if they're using replace ordering.
 	Replace
+	// Same as replace, but acts as if the arguments to the extend* functions were swapped. The src value will be
+	// used only if the dst value was unset.
+	Prepend_replace
 )
 
 type ExtendPropertyFilterFunc func(dstField, srcField reflect.StructField) (bool, error)
@@ -420,6 +429,14 @@ func extendPropertiesRecursive(dstValues []reflect.Value, srcValue reflect.Value
 				}
 			}
 
+			if HasTag(dstField, "android", "replace_instead_of_append") {
+				if order == Append {
+					order = Replace
+				} else if order == Prepend {
+					order = Prepend_replace
+				}
+			}
+
 			ExtendBasicType(dstFieldValue, srcFieldValue, order)
 		}
 
@@ -438,7 +455,7 @@ func extendPropertiesRecursive(dstValues []reflect.Value, srcValue reflect.Value
 }
 
 func ExtendBasicType(dstFieldValue, srcFieldValue reflect.Value, order Order) {
-	prepend := order == Prepend
+	prepend := order == Prepend || order == Prepend_replace
 
 	switch srcFieldValue.Kind() {
 	case reflect.Struct:
@@ -447,11 +464,18 @@ func ExtendBasicType(dstFieldValue, srcFieldValue reflect.Value, order Order) {
 		}
 		if dstFieldValue.Interface().(configurableReflection).isEmpty() {
 			dstFieldValue.Set(srcFieldValue)
-		} else if prepend {
-			srcFieldValue.Interface().(configurableReflection).setAppend(dstFieldValue.Interface())
+		} else if order == Prepend {
+			srcFieldValue.Interface().(configurableReflection).setAppend(dstFieldValue.Interface(), false)
+			dstFieldValue.Set(srcFieldValue)
+		} else if order == Append {
+			dstFieldValue.Interface().(configurableReflection).setAppend(srcFieldValue.Interface(), false)
+		} else if order == Replace {
+			dstFieldValue.Interface().(configurableReflection).setAppend(srcFieldValue.Interface(), true)
+		} else if order == Prepend_replace {
+			srcFieldValue.Interface().(configurableReflection).setAppend(dstFieldValue.Interface(), true)
 			dstFieldValue.Set(srcFieldValue)
 		} else {
-			dstFieldValue.Interface().(configurableReflection).setAppend(srcFieldValue.Interface())
+			panic(fmt.Sprintf("Unexpected order: %d", order))
 		}
 	case reflect.Bool:
 		// Boolean OR
@@ -550,14 +574,9 @@ func ExtendBasicType(dstFieldValue, srcFieldValue reflect.Value, order Order) {
 			if !isConfigurable(srcFieldValue.Type()) {
 				panic("Should be unreachable")
 			}
-			if dstFieldValue.Interface().(configurableReflection).isEmpty() {
-				dstFieldValue.Set(srcFieldValue)
-			} else if prepend {
-				srcFieldValue.Interface().(configurableReflection).setAppend(dstFieldValue.Interface())
-				dstFieldValue.Set(srcFieldValue)
-			} else {
-				dstFieldValue.Interface().(configurableReflection).setAppend(srcFieldValue.Interface())
-			}
+			panic("Don't use pointers to Configurable properties. All Configurable properties can be unset, " +
+				"and the 'replacing' behavior can be accomplished with the `blueprint:\"replace_instead_of_append\" " +
+				"struct field tag. There's no reason to have a pointer configurable property.")
 		default:
 			panic(fmt.Errorf("unexpected pointer kind %s", ptrKind))
 		}
