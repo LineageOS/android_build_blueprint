@@ -307,7 +307,7 @@ func (ctx *unpackContext) unpackToStruct(namePrefix string, structValue reflect.
 			configurableType := fieldValue.Type()
 			configuredType := fieldValue.Interface().(configurableReflection).configuredType()
 			if unpackedValue, ok := ctx.unpackToConfigurable(propertyName, property, configurableType, configuredType); ok {
-				ExtendBasicType(fieldValue, unpackedValue, Append)
+				ExtendBasicType(fieldValue, unpackedValue.Elem(), Append)
 			}
 			if len(ctx.errs) >= maxUnpackErrors {
 				return
@@ -476,7 +476,7 @@ func (ctx *unpackContext) unpackToConfigurable(propertyName string, property *pa
 			if !ok {
 				return reflect.New(configurableType), false
 			}
-			result.Interface().(configurableReflection).setAppend(val.Elem().Interface())
+			result.Interface().(configurableReflection).setAppend(val.Elem().Interface(), false)
 		}
 		return resultPtr, true
 	default:
