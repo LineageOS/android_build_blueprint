@@ -419,6 +419,9 @@ func (ctx *unpackContext) unpackToConfigurable(propertyName string, property *pa
 	case *parser.Operator:
 		property.Value = v.Value.Eval()
 		return ctx.unpackToConfigurable(propertyName, property, configurableType, configuredType)
+	case *parser.Variable:
+		property.Value = v.Value.Eval()
+		return ctx.unpackToConfigurable(propertyName, property, configurableType, configuredType)
 	case *parser.Select:
 		resultPtr := reflect.New(configurableType)
 		result := resultPtr.Elem()
