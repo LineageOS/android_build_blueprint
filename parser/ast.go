@@ -571,37 +571,46 @@ func endPos(pos scanner.Position, n int) scanner.Position {
 	return pos
 }
 
-type SelectType int
+type ConfigurableCondition struct {
+	position     scanner.Position
+	FunctionName string
+	Args         []String
+}
 
-const (
-	SelectTypeUnconfigured SelectType = iota // Used for selects with only one branch, which is "default"
-	SelectTypeReleaseVariable
-	SelectTypeSoongConfigVariable
-	SelectTypeProductVariable
-	SelectTypeVariant
-)
-
-func (s SelectType) String() string {
-	switch s {
-	case SelectTypeUnconfigured:
-		return "unconfigured"
-	case SelectTypeReleaseVariable:
-		return "release variable"
-	case SelectTypeSoongConfigVariable:
-		return "soong config variable"
-	case SelectTypeProductVariable:
-		return "product variable"
-	case SelectTypeVariant:
-		return "variant"
-	default:
-		panic("unreachable")
+func (c *ConfigurableCondition) Equals(other ConfigurableCondition) bool {
+	if c.FunctionName != other.FunctionName {
+		return false
 	}
+	if len(c.Args) != len(other.Args) {
+		return false
+	}
+	for i := range c.Args {
+		if c.Args[i] != other.Args[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func (c *ConfigurableCondition) String() string {
+	var sb strings.Builder
+	sb.WriteString(c.FunctionName)
+	sb.WriteRune('(')
+	for i, arg := range c.Args {
+		sb.WriteRune('"')
+		sb.WriteString(arg.Value)
+		sb.WriteRune('"')
+		if i < len(c.Args)-1 {
+			sb.WriteString(", ")
+		}
+	}
+	sb.WriteRune(')')
+	return sb.String()
 }
 
 type Select struct {
 	KeywordPos     scanner.Position // the keyword "select"
-	Typ            SelectType
-	Condition      String
+	Conditions     []ConfigurableCondition
 	LBracePos      scanner.Position
 	RBracePos      scanner.Position
 	Cases          []*SelectCase // the case statements
@@ -640,8 +649,7 @@ func (s *Select) Type() Type {
 }
 
 type SelectCase struct {
-	// TODO: Support int and bool typed cases
-	Pattern  String
+	Patterns []Expression
 	ColonPos scanner.Position
 	Value    Expression
 }
@@ -656,7 +664,7 @@ func (c *SelectCase) String() string {
 	return "<select case>"
 }
 
-func (c *SelectCase) Pos() scanner.Position { return c.Pattern.LiteralPos }
+func (c *SelectCase) Pos() scanner.Position { return c.Patterns[0].Pos() }
 func (c *SelectCase) End() scanner.Position { return c.Value.End() }
 
 // UnsetProperty is the expression type of the "unset" keyword that can be

@@ -142,48 +142,83 @@ func (p *printer) printSelect(s *Select) {
 	if len(s.Cases) == 0 {
 		return
 	}
-	if len(s.Cases) == 1 && s.Cases[0].Pattern.Value == "__soong_conditions_default__" {
-		p.printExpression(s.Cases[0].Value)
-		p.pos = s.RBracePos
-		return
+	if len(s.Cases) == 1 && len(s.Cases[0].Patterns) == 1 {
+		if str, ok := s.Cases[0].Patterns[0].(*String); ok && str.Value == default_select_branch_name {
+			p.printExpression(s.Cases[0].Value)
+			p.pos = s.RBracePos
+			return
+		}
 	}
 	p.requestSpace()
 	p.printToken("select(", s.KeywordPos)
-	switch s.Typ {
-	case SelectTypeSoongConfigVariable:
-		p.printToken("soong_config_variable(", s.Condition.LiteralPos)
-		parts := strings.Split(s.Condition.Value, ":")
-		namespace := parts[0]
-		variable := parts[1]
-		p.printToken(strconv.Quote(namespace), s.Condition.LiteralPos)
-		p.printToken(",", s.Condition.LiteralPos)
-		p.requestSpace()
-		p.printToken(strconv.Quote(variable), s.Condition.LiteralPos)
-		p.printToken(")", s.Condition.LiteralPos)
-	case SelectTypeReleaseVariable:
-		p.printToken("release_variable(", s.Condition.LiteralPos)
-		p.printToken(strconv.Quote(s.Condition.Value), s.Condition.LiteralPos)
-		p.printToken(")", s.Condition.LiteralPos)
-	case SelectTypeProductVariable:
-		p.printToken("product_variable(", s.Condition.LiteralPos)
-		p.printToken(strconv.Quote(s.Condition.Value), s.Condition.LiteralPos)
-		p.printToken(")", s.Condition.LiteralPos)
-	case SelectTypeVariant:
-		p.printToken("variant(", s.Condition.LiteralPos)
-		p.printToken(strconv.Quote(s.Condition.Value), s.Condition.LiteralPos)
-		p.printToken(")", s.Condition.LiteralPos)
-	default:
-		panic("should be unreachable")
+	multilineConditions := false
+	if len(s.Conditions) > 1 {
+		p.printToken("(", s.KeywordPos)
+		if s.Conditions[len(s.Conditions)-1].position.Line > s.KeywordPos.Line {
+			multilineConditions = true
+			p.requestNewline()
+			p.indent(p.curIndent() + 4)
+		}
+	}
+	for i, c := range s.Conditions {
+		p.printToken(c.FunctionName, c.position)
+		p.printToken("(", c.position)
+		for i, arg := range c.Args {
+			p.printToken(strconv.Quote(arg.Value), arg.LiteralPos)
+			if i < len(c.Args)-1 {
+				p.printToken(",", arg.LiteralPos)
+				p.requestSpace()
+			}
+		}
+		p.printToken(")", p.pos)
+		if len(s.Conditions) > 1 {
+			if multilineConditions {
+				p.printToken(",", p.pos)
+				p.requestNewline()
+			} else if i < len(s.Conditions)-1 {
+				p.printToken(",", p.pos)
+				p.requestSpace()
+			}
+		}
+	}
+	if len(s.Conditions) > 1 {
+		if multilineConditions {
+			p.unindent(p.pos)
+		}
+		p.printToken(")", p.pos)
 	}
 	p.printToken(", {", s.LBracePos)
 	p.requestNewline()
 	p.indent(p.curIndent() + 4)
 	for _, c := range s.Cases {
 		p.requestNewline()
-		if c.Pattern.Value != "__soong_conditions_default__" {
-			p.printToken(strconv.Quote(c.Pattern.Value), c.Pattern.LiteralPos)
-		} else {
-			p.printToken("default", c.Pattern.LiteralPos)
+		if len(c.Patterns) > 1 {
+			p.printToken("(", p.pos)
+		}
+		for i, pat := range c.Patterns {
+			switch pat := pat.(type) {
+			case *String:
+				if pat.Value != default_select_branch_name {
+					p.printToken(strconv.Quote(pat.Value), pat.LiteralPos)
+				} else {
+					p.printToken("default", pat.LiteralPos)
+				}
+			case *Bool:
+				s := "false"
+				if pat.Value {
+					s = "true"
+				}
+				p.printToken(s, pat.LiteralPos)
+			default:
+				panic("Unhandled case")
+			}
+			if i < len(c.Patterns)-1 {
+				p.printToken(",", p.pos)
+				p.requestSpace()
+			}
+		}
+		if len(c.Patterns) > 1 {
+			p.printToken(")", p.pos)
 		}
 		p.printToken(":", c.ColonPos)
 		p.requestSpace()

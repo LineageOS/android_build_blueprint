@@ -14,21 +14,18 @@
 package proptools
 
 import (
-	"fmt"
 	"reflect"
 	"slices"
-
-	"github.com/google/blueprint/parser"
+	"strconv"
+	"strings"
 )
-
-const default_select_branch_name = "__soong_conditions_default__"
 
 type ConfigurableElements interface {
 	string | bool | []string
 }
 
 type ConfigurableEvaluator interface {
-	EvaluateConfiguration(typ parser.SelectType, property, condition string) (string, bool)
+	EvaluateConfiguration(condition ConfigurableCondition, property string) ConfigurableValue
 	PropertyErrorf(property, fmt string, args ...interface{})
 }
 
@@ -37,6 +34,200 @@ type ConfigurableEvaluator interface {
 type configurableMarker bool
 
 var configurableMarkerType reflect.Type = reflect.TypeOf((*configurableMarker)(nil)).Elem()
+
+type ConfigurableCondition struct {
+	FunctionName string
+	Args         []string
+}
+
+func (c *ConfigurableCondition) String() string {
+	var sb strings.Builder
+	sb.WriteString(c.FunctionName)
+	sb.WriteRune('(')
+	for i, arg := range c.Args {
+		sb.WriteString(strconv.Quote(arg))
+		if i < len(c.Args)-1 {
+			sb.WriteString(", ")
+		}
+	}
+	sb.WriteRune(')')
+	return sb.String()
+}
+
+type configurableValueType int
+
+const (
+	configurableValueTypeString configurableValueType = iota
+	configurableValueTypeBool
+	configurableValueTypeUndefined
+)
+
+func (v *configurableValueType) patternType() configurablePatternType {
+	switch *v {
+	case configurableValueTypeString:
+		return configurablePatternTypeString
+	case configurableValueTypeBool:
+		return configurablePatternTypeBool
+	default:
+		panic("unimplemented")
+	}
+}
+
+func (v *configurableValueType) String() string {
+	switch *v {
+	case configurableValueTypeString:
+		return "string"
+	case configurableValueTypeBool:
+		return "bool"
+	case configurableValueTypeUndefined:
+		return "undefined"
+	default:
+		panic("unimplemented")
+	}
+}
+
+// ConfigurableValue represents the value of a certain condition being selected on.
+// This type mostly exists to act as a sum type between string, bool, and undefined.
+type ConfigurableValue struct {
+	typ         configurableValueType
+	stringValue string
+	boolValue   bool
+}
+
+func (c *ConfigurableValue) String() string {
+	switch c.typ {
+	case configurableValueTypeString:
+		return strconv.Quote(c.stringValue)
+	case configurableValueTypeBool:
+		if c.boolValue {
+			return "true"
+		} else {
+			return "false"
+		}
+	case configurableValueTypeUndefined:
+		return "undefined"
+	default:
+		panic("unimplemented")
+	}
+}
+
+func ConfigurableValueString(s string) ConfigurableValue {
+	return ConfigurableValue{
+		typ:         configurableValueTypeString,
+		stringValue: s,
+	}
+}
+
+func ConfigurableValueBool(b bool) ConfigurableValue {
+	return ConfigurableValue{
+		typ:       configurableValueTypeBool,
+		boolValue: b,
+	}
+}
+
+func ConfigurableValueUndefined() ConfigurableValue {
+	return ConfigurableValue{
+		typ: configurableValueTypeUndefined,
+	}
+}
+
+type configurablePatternType int
+
+const (
+	configurablePatternTypeString configurablePatternType = iota
+	configurablePatternTypeBool
+	configurablePatternTypeDefault
+)
+
+func (v *configurablePatternType) String() string {
+	switch *v {
+	case configurablePatternTypeString:
+		return "string"
+	case configurablePatternTypeBool:
+		return "bool"
+	case configurablePatternTypeDefault:
+		return "default"
+	default:
+		panic("unimplemented")
+	}
+}
+
+type configurablePattern struct {
+	typ         configurablePatternType
+	stringValue string
+	boolValue   bool
+}
+
+func (p *configurablePattern) matchesValue(v ConfigurableValue) bool {
+	if p.typ == configurablePatternTypeDefault {
+		return true
+	}
+	if v.typ == configurableValueTypeUndefined {
+		return false
+	}
+	if p.typ != v.typ.patternType() {
+		return false
+	}
+	switch p.typ {
+	case configurablePatternTypeString:
+		return p.stringValue == v.stringValue
+	case configurablePatternTypeBool:
+		return p.boolValue == v.boolValue
+	default:
+		panic("unimplemented")
+	}
+}
+
+func (p *configurablePattern) matchesValueType(v ConfigurableValue) bool {
+	if p.typ == configurablePatternTypeDefault {
+		return true
+	}
+	if v.typ == configurableValueTypeUndefined {
+		return true
+	}
+	return p.typ == v.typ.patternType()
+}
+
+type configurableCase[T ConfigurableElements] struct {
+	patterns []configurablePattern
+	value    *T
+}
+
+func (c *configurableCase[T]) Clone() configurableCase[T] {
+	return configurableCase[T]{
+		patterns: slices.Clone(c.patterns),
+		value:    copyConfiguredValue(c.value),
+	}
+}
+
+type configurableCaseReflection interface {
+	initialize(patterns []configurablePattern, value interface{})
+}
+
+var _ configurableCaseReflection = &configurableCase[string]{}
+
+func (c *configurableCase[T]) initialize(patterns []configurablePattern, value interface{}) {
+	c.patterns = patterns
+	c.value = value.(*T)
+}
+
+// for the given T, return the reflect.type of configurableCase[T]
+func configurableCaseType(configuredType reflect.Type) reflect.Type {
+	// I don't think it's possible to do this generically with go's
+	// current reflection apis unfortunately
+	switch configuredType.Kind() {
+	case reflect.String:
+		return reflect.TypeOf(configurableCase[string]{})
+	case reflect.Bool:
+		return reflect.TypeOf(configurableCase[bool]{})
+	case reflect.Slice:
+		switch configuredType.Elem().Kind() {
+		case reflect.String:
+			return reflect.TypeOf(configurableCase[[]string]{})
+		}
+	}
+	panic("unimplemented")
+}
 
 // Configurable can wrap the type of a blueprint property,
 // in order to allow select statements to be used in bp files
@@ -51,11 +242,11 @@ var configurableMarkerType reflect.Type = reflect.TypeOf((*configurableMarker)(n
 //
 //	my_module {
 //	  property_a: "foo"
-//	  property_b: select soong_config_variable: "my_namespace" "my_variable" {
+//	  property_b: select(soong_config_variable("my_namespace", "my_variable"), {
 //	    "value_1": "bar",
 //	    "value_2": "baz",
 //	    default: "qux",
-//	  }
+//	  })
 //	}
 //
 // The configurable property holds all the branches of the select
@@ -67,9 +258,8 @@ var configurableMarkerType reflect.Type = reflect.TypeOf((*configurableMarker)(n
 type Configurable[T ConfigurableElements] struct {
 	marker        configurableMarker
 	propertyName  string
-	typ           parser.SelectType
-	condition     string
-	cases         map[string]*T
+	conditions    []ConfigurableCondition
+	cases         []configurableCase[T]
 	appendWrapper *appendWrapper[T]
 }
 
@@ -112,40 +302,49 @@ func (c *Configurable[T]) GetOrDefault(evaluator ConfigurableEvaluator, defaultV
 }
 
 func (c *Configurable[T]) evaluateNonTransitive(evaluator ConfigurableEvaluator) *T {
-	if c.typ == parser.SelectTypeUnconfigured {
+	for i, case_ := range c.cases {
+		if len(c.conditions) != len(case_.patterns) {
+			evaluator.PropertyErrorf(c.propertyName, "Expected each case to have as many patterns as conditions. conditions: %d, len(cases[%d].patterns): %d", len(c.conditions), i, len(case_.patterns))
+			return nil
+		}
+	}
+	if len(c.conditions) == 0 {
 		if len(c.cases) == 0 {
 			return nil
-		} else if len(c.cases) != 1 {
-			panic(fmt.Sprintf("Expected 0 or 1 branches in an unconfigured select, found %d", len(c.cases)))
+		} else if len(c.cases) == 1 {
+			return c.cases[0].value
+		} else {
+			evaluator.PropertyErrorf(c.propertyName, "Expected 0 or 1 branches in an unconfigured select, found %d", len(c.cases))
+			return nil
 		}
-		result, ok := c.cases[default_select_branch_name]
-		if !ok {
-			actual := ""
-			for k := range c.cases {
-				actual = k
+	}
+	values := make([]ConfigurableValue, len(c.conditions))
+	for i, condition := range c.conditions {
+		values[i] = evaluator.EvaluateConfiguration(condition, c.propertyName)
+	}
+	foundMatch := false
+	var result *T
+	for _, case_ := range c.cases {
+		allMatch := true
+		for i, pat := range case_.patterns {
+			if !pat.matchesValueType(values[i]) {
+				evaluator.PropertyErrorf(c.propertyName, "Expected all branches of a select on condition %s to have type %s, found %s", c.conditions[i].String(), values[i].typ.String(), pat.typ.String())
+				return nil
 			}
-			panic(fmt.Sprintf("Expected the single branch of an unconfigured select to be %q, got %q", default_select_branch_name, actual))
+			if !pat.matchesValue(values[i]) {
+				allMatch = false
+				break
+			}
 		}
-		return result
-	}
-	val, defined := evaluator.EvaluateConfiguration(c.typ, c.propertyName, c.condition)
-	if !defined {
-		if result, ok := c.cases[default_select_branch_name]; ok {
-			return result
+		if allMatch && !foundMatch {
+			result = case_.value
+			foundMatch = true
 		}
-		evaluator.PropertyErrorf(c.propertyName, "%s %q was not defined", c.typ.String(), c.condition)
-		return nil
 	}
-	if val == default_select_branch_name {
-		panic("Evaluator cannot return the default branch")
-	}
-	if result, ok := c.cases[val]; ok {
+	if foundMatch {
 		return result
 	}
-	if result, ok := c.cases[default_select_branch_name]; ok {
-		return result
-	}
-	evaluator.PropertyErrorf(c.propertyName, "%s %q had value %q, which was not handled by the select statement", c.typ.String(), c.condition, val)
+	evaluator.PropertyErrorf(c.propertyName, "%s had value %s, which was not handled by the select statement", c.conditions, values)
 	return nil
 }
 
@@ -216,17 +415,16 @@ type configurableReflection interface {
 // Same as configurableReflection, but since initialize needs to take a pointer
 // to a Configurable, it was broken out into a separate interface.
 type configurablePtrReflection interface {
-	initialize(propertyName string, typ parser.SelectType, condition string, cases any)
+	initialize(propertyName string, conditions []ConfigurableCondition, cases any)
 }
 
 var _ configurableReflection = Configurable[string]{}
 var _ configurablePtrReflection = &Configurable[string]{}
 
-func (c *Configurable[T]) initialize(propertyName string, typ parser.SelectType, condition string, cases any) {
+func (c *Configurable[T]) initialize(propertyName string, conditions []ConfigurableCondition, cases any) {
 	c.propertyName = propertyName
-	c.typ = typ
-	c.condition = condition
-	c.cases = cases.(map[string]*T)
+	c.conditions = conditions
+	c.cases = cases.([]configurableCase[T])
 	c.appendWrapper = &appendWrapper[T]{}
 }
 
@@ -243,7 +441,7 @@ func (c Configurable[T]) isEmpty() bool {
 	if c.appendWrapper != nil && !c.appendWrapper.append.isEmpty() {
 		return false
 	}
-	return c.typ == parser.SelectTypeUnconfigured && len(c.cases) == 0
+	return len(c.cases) == 0
 }
 
 func (c Configurable[T]) configuredType() reflect.Type {
@@ -267,15 +465,17 @@ func (c *Configurable[T]) clone() *Configurable[T] {
 		}
 	}
 
-	casesCopy := make(map[string]*T, len(c.cases))
-	for k, v := range c.cases {
-		casesCopy[k] = copyConfiguredValue(v)
+	conditionsCopy := make([]ConfigurableCondition, len(c.conditions))
+	copy(conditionsCopy, c.conditions)
+
+	casesCopy := make([]configurableCase[T], len(c.cases))
+	for i, case_ := range c.cases {
+		casesCopy[i] = case_.Clone()
 	}
 
 	return &Configurable[T]{
 		propertyName:  c.propertyName,
-		typ:           c.typ,
-		condition:     c.condition,
+		conditions:    conditionsCopy,
 		cases:         casesCopy,
 		appendWrapper: inner,
 	}
