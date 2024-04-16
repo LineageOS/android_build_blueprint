@@ -924,6 +924,42 @@ var validUnpackTestCases = []struct {
 			},
 		},
 	},
+	{
+		name: "Unpack variable to configurable property",
+		input: `
+			my_string_variable = "asdf"
+			my_bool_variable = true
+			m {
+				foo: my_string_variable,
+				bar: my_bool_variable,
+			}
+		`,
+		output: []interface{}{
+			&struct {
+				Foo Configurable[string]
+				Bar Configurable[bool]
+			}{
+				Foo: Configurable[string]{
+					propertyName: "foo",
+					cases: []configurableCase[string]{
+						{
+							value: StringPtr("asdf"),
+						},
+					},
+					appendWrapper: &appendWrapper[string]{},
+				},
+				Bar: Configurable[bool]{
+					propertyName: "bar",
+					cases: []configurableCase[bool]{
+						{
+							value: BoolPtr(true),
+						},
+					},
+					appendWrapper: &appendWrapper[bool]{},
+				},
+			},
+		},
+	},
 }
 
 func TestUnpackProperties(t *testing.T) {
