@@ -657,50 +657,44 @@ foo {
 `,
 	},
 	{
-		name: "Select with only unsets is removed",
+		name: "Multi-condition select",
 		input: `
 foo {
-    stuff: select(soong_config_variable("my_namespace", "my_variable"), {
-        "foo": unset,
-        default: unset,
+    stuff: select((arch(), os()), {
+        ("x86", "linux"): "a",
+        (default, default): "b",
     }),
 }
 `,
 		output: `
 foo {
-
+    stuff: select((arch(), os()), {
+        ("x86", "linux"): "a",
+        (default, default): "b",
+    }),
 }
 `,
 	},
 	{
-		name: "Additions of unset selects are removed",
+		name: "Multi-condition select with conditions on new lines",
 		input: `
 foo {
-    stuff: select(soong_config_variable("my_namespace", "my_variable"), {
-        "foo": "a",
-        default: "b",
-    }) + select(soong_config_variable("my_namespace", "my_variable2"), {
-        "foo": unset,
-        default: unset,
-    }) + select(soong_config_variable("my_namespace", "my_variable3"), {
-        "foo": "c",
-        default: "d",
+    stuff: select((arch(), 
+    os()), {
+        ("x86", "linux"): "a",
+        (default, default): "b",
     }),
 }
 `,
-		// TODO(b/323382414): This is not good formatting, revisit later.
-		// But at least it removes the useless middle select
 		output: `
 foo {
-    stuff: select(soong_config_variable("my_namespace", "my_variable"), {
-        "foo": "a",
-        default: "b",
-    }) +
-
-        select(soong_config_variable("my_namespace", "my_variable3"), {
-            "foo": "c",
-            default: "d",
-        }),
+    stuff: select((
+        arch(),
+        os(),
+    ), {
+        ("x86", "linux"): "a",
+        (default, default): "b",
+    }),
 }
 `,
 	},

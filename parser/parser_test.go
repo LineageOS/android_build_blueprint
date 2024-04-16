@@ -1225,6 +1225,17 @@ func TestParserError(t *testing.T) {
 			input: "\x00",
 			err:   "invalid character NUL",
 		},
+		{
+			name: "select with duplicate condition",
+			input: `
+			m {
+				foo: select((arch(), arch()), {
+					(default, default): true,
+				}),
+			}
+			`,
+			err: "Duplicate select condition found: arch()",
+		},
 		// TODO: test more parser errors
 	}
 

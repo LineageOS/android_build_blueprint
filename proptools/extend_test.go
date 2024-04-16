@@ -20,8 +20,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/google/blueprint/parser"
 )
 
 type appendPropertyTestCase struct {
@@ -1260,38 +1258,72 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 			name: "Append configurable",
 			dst: &struct{ S Configurable[[]string] }{
 				S: Configurable[[]string]{
-					typ:       parser.SelectTypeSoongConfigVariable,
-					condition: "foo",
-					cases: map[string]*[]string{
-						"a": {"1", "2"},
-					},
+					conditions: []ConfigurableCondition{{
+						FunctionName: "soong_config_variable",
+						Args: []string{
+							"my_namespace",
+							"foo",
+						},
+					}},
+					cases: []configurableCase[[]string]{{
+						patterns: []configurablePattern{{
+							typ:         configurablePatternTypeString,
+							stringValue: "a",
+						}},
+						value: &[]string{"1", "2"},
+					}},
 					appendWrapper: &appendWrapper[[]string]{},
 				},
 			},
 			src: &struct{ S Configurable[[]string] }{
 				S: Configurable[[]string]{
-					typ:       parser.SelectTypeReleaseVariable,
-					condition: "bar",
-					cases: map[string]*[]string{
-						"b": {"3", "4"},
-					},
+					conditions: []ConfigurableCondition{{
+						FunctionName: "release_variable",
+						Args: []string{
+							"bar",
+						},
+					}},
+					cases: []configurableCase[[]string]{{
+						patterns: []configurablePattern{{
+							typ:         configurablePatternTypeString,
+							stringValue: "b",
+						}},
+						value: &[]string{"3", "4"},
+					}},
 					appendWrapper: &appendWrapper[[]string]{},
 				},
 			},
 			out: &struct{ S Configurable[[]string] }{
 				S: Configurable[[]string]{
-					typ:       parser.SelectTypeSoongConfigVariable,
-					condition: "foo",
-					cases: map[string]*[]string{
-						"a": {"1", "2"},
-					},
+					conditions: []ConfigurableCondition{{
+						FunctionName: "soong_config_variable",
+						Args: []string{
+							"my_namespace",
+							"foo",
+						},
+					}},
+					cases: []configurableCase[[]string]{{
+						patterns: []configurablePattern{{
+							typ:         configurablePatternTypeString,
+							stringValue: "a",
+						}},
+						value: &[]string{"1", "2"},
+					}},
 					appendWrapper: &appendWrapper[[]string]{
 						append: Configurable[[]string]{
-							typ:       parser.SelectTypeReleaseVariable,
-							condition: "bar",
-							cases: map[string]*[]string{
-								"b": {"3", "4"},
-							},
+							conditions: []ConfigurableCondition{{
+								FunctionName: "release_variable",
+								Args: []string{
+									"bar",
+								},
+							}},
+							cases: []configurableCase[[]string]{{
+								patterns: []configurablePattern{{
+									typ:         configurablePatternTypeString,
+									stringValue: "b",
+								}},
+								value: &[]string{"3", "4"},
+							}},
 							appendWrapper: &appendWrapper[[]string]{},
 						},
 					},
@@ -1303,38 +1335,72 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 			order: Prepend,
 			dst: &struct{ S Configurable[[]string] }{
 				S: Configurable[[]string]{
-					typ:       parser.SelectTypeSoongConfigVariable,
-					condition: "foo",
-					cases: map[string]*[]string{
-						"a": {"1", "2"},
-					},
+					conditions: []ConfigurableCondition{{
+						FunctionName: "soong_config_variable",
+						Args: []string{
+							"my_namespace",
+							"foo",
+						},
+					}},
+					cases: []configurableCase[[]string]{{
+						patterns: []configurablePattern{{
+							typ:         configurablePatternTypeString,
+							stringValue: "a",
+						}},
+						value: &[]string{"1", "2"},
+					}},
 					appendWrapper: &appendWrapper[[]string]{},
 				},
 			},
 			src: &struct{ S Configurable[[]string] }{
 				S: Configurable[[]string]{
-					typ:       parser.SelectTypeReleaseVariable,
-					condition: "bar",
-					cases: map[string]*[]string{
-						"b": {"3", "4"},
-					},
+					conditions: []ConfigurableCondition{{
+						FunctionName: "release_variable",
+						Args: []string{
+							"bar",
+						},
+					}},
+					cases: []configurableCase[[]string]{{
+						patterns: []configurablePattern{{
+							typ:         configurablePatternTypeString,
+							stringValue: "b",
+						}},
+						value: &[]string{"3", "4"},
+					}},
 					appendWrapper: &appendWrapper[[]string]{},
 				},
 			},
 			out: &struct{ S Configurable[[]string] }{
 				S: Configurable[[]string]{
-					typ:       parser.SelectTypeReleaseVariable,
-					condition: "bar",
-					cases: map[string]*[]string{
-						"b": {"3", "4"},
-					},
+					conditions: []ConfigurableCondition{{
+						FunctionName: "release_variable",
+						Args: []string{
+							"bar",
+						},
+					}},
+					cases: []configurableCase[[]string]{{
+						patterns: []configurablePattern{{
+							typ:         configurablePatternTypeString,
+							stringValue: "b",
+						}},
+						value: &[]string{"3", "4"},
+					}},
 					appendWrapper: &appendWrapper[[]string]{
 						append: Configurable[[]string]{
-							typ:       parser.SelectTypeSoongConfigVariable,
-							condition: "foo",
-							cases: map[string]*[]string{
-								"a": {"1", "2"},
-							},
+							conditions: []ConfigurableCondition{{
+								FunctionName: "soong_config_variable",
+								Args: []string{
+									"my_namespace",
+									"foo",
+								},
+							}},
+							cases: []configurableCase[[]string]{{
+								patterns: []configurablePattern{{
+									typ:         configurablePatternTypeString,
+									stringValue: "a",
+								}},
+								value: &[]string{"1", "2"},
+							}},
 							appendWrapper: &appendWrapper[[]string]{},
 						},
 					},
