@@ -384,12 +384,16 @@ func extendPropertiesRecursive(dstValues []reflect.Value, srcValue reflect.Value
 					continue
 				}
 			case reflect.Bool, reflect.String, reflect.Slice, reflect.Map:
-				if srcFieldValue.Type() != dstFieldValue.Type() {
+				// If the types don't match or srcFieldValue cannot be converted to a Configurable type, it's an error
+				ct, err := configurableType(srcFieldValue.Type())
+				if srcFieldValue.Type() != dstFieldValue.Type() && (err != nil || dstFieldValue.Type() != ct) {
 					return extendPropertyErrorf(propertyName(srcField), "mismatched types %s and %s",
 						dstFieldValue.Type(), srcFieldValue.Type())
 				}
 			case reflect.Ptr:
-				if srcFieldValue.Type() != dstFieldValue.Type() {
+				// If the types don't match or srcFieldValue cannot be converted to a Configurable type, it's an error
+				ct, err := configurableType(srcFieldValue.Type().Elem())
+				if srcFieldValue.Type() != dstFieldValue.Type() && (err != nil || dstFieldValue.Type() != ct) {
 					return extendPropertyErrorf(propertyName(srcField), "mismatched types %s and %s",
 						dstFieldValue.Type(), srcFieldValue.Type())
 				}
@@ -456,6 +460,47 @@ func extendPropertiesRecursive(dstValues []reflect.Value, srcValue reflect.Value
 
 func ExtendBasicType(dstFieldValue, srcFieldValue reflect.Value, order Order) {
 	prepend := order == Prepend || order == Prepend_replace
+
+	if !srcFieldValue.IsValid() {
+		return
+	}
+
+	// If dst is a Configurable and src isn't, promote src to a Configurable.
+	// This isn't necessary if all property structs are using Configurable values,
+	// but it's helpful to avoid having to change as many places in the code when
+	// converting properties to Configurable properties. For example, load hooks
+	// make their own mini-property structs and append them onto the main property
+	// structs when they want to change the default values of properties.
+	srcFieldType := srcFieldValue.Type()
+	if isConfigurable(dstFieldValue.Type()) && !isConfigurable(srcFieldType) {
+		var value reflect.Value
+		if srcFieldType.Kind() == reflect.Pointer {
+			srcFieldType = srcFieldType.Elem()
+			if srcFieldValue.IsNil() {
+				value = srcFieldValue
+			} else {
+				// Copy the pointer
+				value = reflect.New(srcFieldType)
+				value.Elem().Set(srcFieldValue.Elem())
+			}
+		} else {
+			value = reflect.New(srcFieldType)
+			value.Elem().Set(srcFieldValue)
+		}
+		caseType := configurableCaseType(srcFieldType)
+		case_ := reflect.New(caseType)
+		case_.Interface().(configurableCaseReflection).initialize(nil, value.Interface())
+		cases := reflect.MakeSlice(reflect.SliceOf(caseType), 0, 1)
+		cases = reflect.Append(cases, case_.Elem())
+		ct, err := configurableType(srcFieldType)
+		if err != nil {
+			// Should be unreachable due to earlier checks
+			panic(err.Error())
+		}
+		temp := reflect.New(ct)
+		temp.Interface().(configurablePtrReflection).initialize("", nil, cases.Interface())
+		srcFieldValue = temp.Elem()
+	}
 
 	switch srcFieldValue.Kind() {
 	case reflect.Struct:

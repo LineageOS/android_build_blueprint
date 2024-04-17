@@ -1869,6 +1869,138 @@ func appendMatchingPropertiesTestCases() []appendMatchingPropertiesTestCase {
 			},
 			err: extendPropertyErrorf("s", "mismatched types []int and []string"),
 		},
+		{
+			name:  "Append *bool to Configurable[bool]",
+			order: Append,
+			dst: []interface{}{
+				&struct{ S Configurable[bool] }{
+					S: Configurable[bool]{
+						conditions: []ConfigurableCondition{{
+							FunctionName: "soong_config_variable",
+							Args: []string{
+								"my_namespace",
+								"foo",
+							},
+						}},
+						cases: []ConfigurableCase[bool]{{
+							patterns: []ConfigurablePattern{{
+								typ:         configurablePatternTypeString,
+								stringValue: "a",
+							}},
+							value: BoolPtr(true),
+						}, {
+							patterns: []ConfigurablePattern{{
+								typ: configurablePatternTypeDefault,
+							}},
+							value: BoolPtr(false),
+						}},
+						appendWrapper: &appendWrapper[bool]{},
+					},
+				},
+			},
+			src: &struct{ S *bool }{
+				S: BoolPtr(true),
+			},
+			out: []interface{}{
+				&struct{ S Configurable[bool] }{
+					S: Configurable[bool]{
+						conditions: []ConfigurableCondition{{
+							FunctionName: "soong_config_variable",
+							Args: []string{
+								"my_namespace",
+								"foo",
+							},
+						}},
+						cases: []ConfigurableCase[bool]{{
+							patterns: []ConfigurablePattern{{
+								typ:         configurablePatternTypeString,
+								stringValue: "a",
+							}},
+							value: BoolPtr(true),
+						}, {
+							patterns: []ConfigurablePattern{{
+								typ: configurablePatternTypeDefault,
+							}},
+							value: BoolPtr(false),
+						}},
+						appendWrapper: &appendWrapper[bool]{
+							append: Configurable[bool]{
+								cases: []ConfigurableCase[bool]{{
+									value: BoolPtr(true),
+								}},
+								appendWrapper: &appendWrapper[bool]{},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:  "Append bool to Configurable[bool]",
+			order: Append,
+			dst: []interface{}{
+				&struct{ S Configurable[bool] }{
+					S: Configurable[bool]{
+						conditions: []ConfigurableCondition{{
+							FunctionName: "soong_config_variable",
+							Args: []string{
+								"my_namespace",
+								"foo",
+							},
+						}},
+						cases: []ConfigurableCase[bool]{{
+							patterns: []ConfigurablePattern{{
+								typ:         configurablePatternTypeString,
+								stringValue: "a",
+							}},
+							value: BoolPtr(true),
+						}, {
+							patterns: []ConfigurablePattern{{
+								typ: configurablePatternTypeDefault,
+							}},
+							value: BoolPtr(false),
+						}},
+						appendWrapper: &appendWrapper[bool]{},
+					},
+				},
+			},
+			src: &struct{ S bool }{
+				S: true,
+			},
+			out: []interface{}{
+				&struct{ S Configurable[bool] }{
+					S: Configurable[bool]{
+						conditions: []ConfigurableCondition{{
+							FunctionName: "soong_config_variable",
+							Args: []string{
+								"my_namespace",
+								"foo",
+							},
+						}},
+						cases: []ConfigurableCase[bool]{{
+							patterns: []ConfigurablePattern{{
+								typ:         configurablePatternTypeString,
+								stringValue: "a",
+							}},
+							value: BoolPtr(true),
+						}, {
+							patterns: []ConfigurablePattern{{
+								typ: configurablePatternTypeDefault,
+							}},
+							value: BoolPtr(false),
+						}},
+						appendWrapper: &appendWrapper[bool]{
+							append: Configurable[bool]{
+								cases: []ConfigurableCase[bool]{{
+									value: BoolPtr(true),
+								}},
+								appendWrapper: &appendWrapper[bool]{},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 }
 

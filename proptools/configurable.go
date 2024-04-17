@@ -257,6 +257,24 @@ func configurableCaseType(configuredType reflect.Type) reflect.Type {
 	panic("unimplemented")
 }
 
+// for the given T, return the reflect.type of Configurable[T]
+func configurableType(configuredType reflect.Type) (reflect.Type, error) {
+	// I don't think it's possible to do this generically with go's
+	// current reflection apis unfortunately
+	switch configuredType.Kind() {
+	case reflect.String:
+		return reflect.TypeOf(Configurable[string]{}), nil
+	case reflect.Bool:
+		return reflect.TypeOf(Configurable[bool]{}), nil
+	case reflect.Slice:
+		switch configuredType.Elem().Kind() {
+		case reflect.String:
+			return reflect.TypeOf(Configurable[[]string]{}), nil
+		}
+	}
+	return nil, fmt.Errorf("configurable structs can only contain strings, bools, or string slices, found %s", configuredType.String())
+}
+
 // Configurable can wrap the type of a blueprint property,
 // in order to allow select statements to be used in bp files
 // for that property. For example, for the property struct:
