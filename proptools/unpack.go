@@ -356,10 +356,9 @@ func (ctx *unpackContext) unpackToConfigurable(propertyName string, property *pa
 		}
 		result := Configurable[string]{
 			propertyName: property.Name,
-			typ:          parser.SelectTypeUnconfigured,
-			cases: map[string]*string{
-				default_select_branch_name: &v.Value,
-			},
+			cases: []configurableCase[string]{{
+				value: &v.Value,
+			}},
 			appendWrapper: &appendWrapper[string]{},
 		}
 		return reflect.ValueOf(&result), true
@@ -374,10 +373,9 @@ func (ctx *unpackContext) unpackToConfigurable(propertyName string, property *pa
 		}
 		result := Configurable[bool]{
 			propertyName: property.Name,
-			typ:          parser.SelectTypeUnconfigured,
-			cases: map[string]*bool{
-				default_select_branch_name: &v.Value,
-			},
+			cases: []configurableCase[bool]{{
+				value: &v.Value,
+			}},
 			appendWrapper: &appendWrapper[bool]{},
 		}
 		return reflect.ValueOf(&result), true
@@ -392,9 +390,9 @@ func (ctx *unpackContext) unpackToConfigurable(propertyName string, property *pa
 		}
 		switch configuredType.Elem().Kind() {
 		case reflect.String:
-			var cases map[string]*[]string
+			var value []string
 			if v.Values != nil {
-				value := make([]string, 0, len(v.Values))
+				value = make([]string, len(v.Values))
 				itemProperty := &parser.Property{NamePos: property.NamePos, ColonPos: property.ColonPos}
 				for i, expr := range v.Values {
 					itemProperty.Name = propertyName + "[" + strconv.Itoa(i) + "]"
@@ -404,14 +402,14 @@ func (ctx *unpackContext) unpackToConfigurable(propertyName string, property *pa
 						ctx.addError(err)
 						return reflect.ValueOf(Configurable[[]string]{}), false
 					}
-					value = append(value, exprUnpacked.Interface().(string))
+					value[i] = exprUnpacked.Interface().(string)
 				}
-				cases = map[string]*[]string{default_select_branch_name: &value}
 			}
 			result := Configurable[[]string]{
-				propertyName:  property.Name,
-				typ:           parser.SelectTypeUnconfigured,
-				cases:         cases,
+				propertyName: property.Name,
+				cases: []configurableCase[[]string]{{
+					value: &value,
+				}},
 				appendWrapper: &appendWrapper[[]string]{},
 			}
 			return reflect.ValueOf(&result), true
@@ -421,49 +419,87 @@ func (ctx *unpackContext) unpackToConfigurable(propertyName string, property *pa
 	case *parser.Operator:
 		property.Value = v.Value.Eval()
 		return ctx.unpackToConfigurable(propertyName, property, configurableType, configuredType)
+	case *parser.Variable:
+		property.Value = v.Value.Eval()
+		return ctx.unpackToConfigurable(propertyName, property, configurableType, configuredType)
 	case *parser.Select:
 		resultPtr := reflect.New(configurableType)
 		result := resultPtr.Elem()
-		cases := reflect.MakeMapWithSize(reflect.MapOf(reflect.TypeOf(""), reflect.PointerTo(configuredType)), len(v.Cases))
+		conditions := make([]ConfigurableCondition, len(v.Conditions))
+		for i, cond := range v.Conditions {
+			args := make([]string, len(cond.Args))
+			for j, arg := range cond.Args {
+				args[j] = arg.Value
+			}
+			conditions[i] = ConfigurableCondition{
+				FunctionName: cond.FunctionName,
+				Args:         args,
+			}
+		}
+
+		configurableCaseType := configurableCaseType(configuredType)
+		cases := reflect.MakeSlice(reflect.SliceOf(configurableCaseType), 0, len(v.Cases))
 		for i, c := range v.Cases {
 			p := &parser.Property{
 				Name:    property.Name + "[" + strconv.Itoa(i) + "]",
 				NamePos: c.ColonPos,
 				Value:   c.Value,
 			}
+
+			patterns := make([]configurablePattern, len(c.Patterns))
+			for i, pat := range c.Patterns {
+				switch pat := pat.(type) {
+				case *parser.String:
+					if pat.Value == "__soong_conditions_default__" {
+						patterns[i].typ = configurablePatternTypeDefault
+					} else {
+						patterns[i].typ = configurablePatternTypeString
+						patterns[i].stringValue = pat.Value
+					}
+				case *parser.Bool:
+					patterns[i].typ = configurablePatternTypeBool
+					patterns[i].boolValue = pat.Value
+				default:
+					panic("unimplemented")
+				}
+			}
+
+			var value reflect.Value
 			// Map the "unset" keyword to a nil pointer in the cases map
 			if _, ok := c.Value.(parser.UnsetProperty); ok {
-				cases.SetMapIndex(reflect.ValueOf(c.Pattern.Value), reflect.Zero(reflect.PointerTo(configuredType)))
-				continue
+				value = reflect.Zero(reflect.PointerTo(configuredType))
+			} else {
+				var err error
+				switch configuredType.Kind() {
+				case reflect.String, reflect.Bool:
+					value, err = propertyToValue(reflect.PointerTo(configuredType), p)
+					if err != nil {
+						ctx.addError(&UnpackError{
+							err,
+							c.Value.Pos(),
+						})
+						return reflect.New(configurableType), false
+					}
+				case reflect.Slice:
+					if configuredType.Elem().Kind() != reflect.String {
+						panic("This should be unreachable because ConfigurableElements only accepts slices of strings")
+					}
+					value, ok = ctx.unpackToSlice(p.Name, p, reflect.PointerTo(configuredType))
+					if !ok {
+						return reflect.New(configurableType), false
+					}
+				default:
+					panic("This should be unreachable because ConfigurableElements only accepts strings, boools, or slices of strings")
+				}
 			}
-			switch configuredType.Kind() {
-			case reflect.String, reflect.Bool:
-				val, err := propertyToValue(reflect.PointerTo(configuredType), p)
-				if err != nil {
-					ctx.addError(&UnpackError{
-						err,
-						c.Value.Pos(),
-					})
-					return reflect.New(configurableType), false
-				}
-				cases.SetMapIndex(reflect.ValueOf(c.Pattern.Value), val)
-			case reflect.Slice:
-				if configuredType.Elem().Kind() != reflect.String {
-					panic("This should be unreachable because ConfigurableElements only accepts slices of strings")
-				}
-				val, ok := ctx.unpackToSlice(p.Name, p, reflect.PointerTo(configuredType))
-				if !ok {
-					return reflect.New(configurableType), false
-				}
-				cases.SetMapIndex(reflect.ValueOf(c.Pattern.Value), val)
-			default:
-				panic("This should be unreachable because ConfigurableElements only accepts strings, boools, or slices of strings")
-			}
+
+			case_ := reflect.New(configurableCaseType)
+			case_.Interface().(configurableCaseReflection).initialize(patterns, value.Interface())
+			cases = reflect.Append(cases, case_.Elem())
 		}
 		resultPtr.Interface().(configurablePtrReflection).initialize(
 			property.Name,
-			v.Typ,
-			v.Condition.Value,
+			conditions,
 			cases.Interface(),
 		)
 		if v.Append != nil {

@@ -53,6 +53,7 @@ bootstrap_go_package {
         "scope.go",
         "singleton_ctx.go",
         "source_file_provider.go",
+        "transition.go",
     ],
     testSrcs: [
         "context_test.go",
@@ -63,6 +64,7 @@ bootstrap_go_package {
         "ninja_writer_test.go",
         "provider_test.go",
         "splice_modules_test.go",
+        "transition_test.go",
         "visit_test.go",
     ],
 }
