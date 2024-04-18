@@ -144,8 +144,9 @@ type OutgoingTransitionContext interface {
 }
 
 type transitionMutatorImpl struct {
-	name    string
-	mutator TransitionMutator
+	name          string
+	mutator       TransitionMutator
+	inputVariants map[*moduleGroup][]*moduleInfo
 }
 
 // Adds each argument in items to l if it's not already there.
@@ -294,7 +295,7 @@ func (c *Context) RegisterTransitionMutator(name string, mutator TransitionMutat
 	impl := &transitionMutatorImpl{name: name, mutator: mutator}
 
 	c.RegisterTopDownMutator(name+"_deps", impl.topDownMutator).Parallel()
-	c.RegisterBottomUpMutator(name, impl.bottomUpMutator).Parallel()
+	c.RegisterBottomUpMutator(name, impl.bottomUpMutator).Parallel().setTransitionMutator(impl)
 	c.RegisterBottomUpMutator(name+"_mutate", impl.mutateMutator).Parallel()
 }
 
