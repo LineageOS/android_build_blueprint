@@ -15,14 +15,48 @@
 package blueprint
 
 import (
+	"fmt"
 	"slices"
+	"strings"
 	"testing"
 )
 
-func TestTransition(t *testing.T) {
+func testTransition(bp string) (*Context, []error) {
 	ctx := newContext()
 	ctx.MockFileSystem(map[string][]byte{
-		"Android.bp": []byte(`
+		"Android.bp": []byte(bp),
+	})
+
+	ctx.RegisterBottomUpMutator("deps", depsMutator)
+	ctx.RegisterTransitionMutator("transition", transitionTestMutator{})
+	ctx.RegisterBottomUpMutator("post_transition_deps", postTransitionDepsMutator)
+
+	ctx.RegisterModuleType("transition_module", newTransitionModule)
+	_, errs := ctx.ParseBlueprintsFiles("Android.bp", nil)
+	if len(errs) > 0 {
+		return nil, errs
+	}
+
+	_, errs = ctx.ResolveDependencies(nil)
+	if len(errs) > 0 {
+		return nil, errs
+	}
+
+	return ctx, nil
+}
+
+func assertNoErrors(t *testing.T, errs []error) {
+	t.Helper()
+	if len(errs) > 0 {
+		t.Errorf("unexpected errors:")
+		for _, err := range errs {
+			t.Errorf("  %s", err)
+		}
+		t.FailNow()
+	}
+}
+
+const testTransitionBp = `
 			transition_module {
 			    name: "A",
 			    deps: ["B", "C"],
@@ -33,6 +67,7 @@ func TestTransition(t *testing.T) {
 				name: "B",
 				deps: ["C"],
 				outgoing: "c",
+				%s
 			}
 
 			transition_module {
@@ -43,103 +78,156 @@ func TestTransition(t *testing.T) {
 			transition_module {
 				name: "D",
 				incoming: "d",
+				deps: ["E"],
 			}
-		`),
+
+			transition_module {
+				name: "E",
+			}
+		`
+
+func getTransitionModule(ctx *Context, name, variant string) *transitionModule {
+	group := ctx.moduleGroupFromName(name, nil)
+	module := group.moduleOrAliasByVariantName(variant).module()
+	return module.logicModule.(*transitionModule)
+}
+
+func checkTransitionVariants(t *testing.T, ctx *Context, name string, expectedVariants []string) {
+	t.Helper()
+	group := ctx.moduleGroupFromName(name, nil)
+	var gotVariants []string
+	for _, variant := range group.modules {
+		gotVariants = append(gotVariants, variant.moduleOrAliasVariant().variations["transition"])
+	}
+	if !slices.Equal(expectedVariants, gotVariants) {
+		t.Errorf("expected variants of %q to be %q, got %q", name, expectedVariants, gotVariants)
+	}
+}
+
+func checkTransitionDeps(t *testing.T, ctx *Context, m Module, expected ...string) {
+	t.Helper()
+	var got []string
+	ctx.VisitDirectDeps(m, func(m Module) {
+		got = append(got, ctx.ModuleName(m)+"("+ctx.ModuleSubDir(m)+")")
 	})
-
-	ctx.RegisterBottomUpMutator("deps", depsMutator)
-	ctx.RegisterTransitionMutator("transition", transitionTestMutator{})
-
-	ctx.RegisterModuleType("transition_module", newTransitionModule)
-	_, errs := ctx.ParseBlueprintsFiles("Android.bp", nil)
-	if len(errs) > 0 {
-		t.Errorf("unexpected parse errors:")
-		for _, err := range errs {
-			t.Errorf("  %s", err)
-		}
-		t.FailNow()
+	if !slices.Equal(got, expected) {
+		t.Errorf("unexpected %q dependencies, got %q expected %q",
+			ctx.ModuleName(m), got, expected)
 	}
+}
 
-	_, errs = ctx.ResolveDependencies(nil)
-	if len(errs) > 0 {
-		t.Errorf("unexpected dep errors:")
-		for _, err := range errs {
-			t.Errorf("  %s", err)
-		}
-		t.FailNow()
+func checkTransitionMutate(t *testing.T, m *transitionModule, variant string) {
+	t.Helper()
+	if m.properties.Mutated != variant {
+		t.Errorf("unexpected mutated property in %q, expected %q got %q", m.Name(), variant, m.properties.Mutated)
 	}
+}
 
-	getModule := func(name, variant string) *transitionModule {
-		group := ctx.moduleGroupFromName(name, nil)
-		module := group.moduleOrAliasByVariantName(variant).module()
-		return module.logicModule.(*transitionModule)
-	}
-
-	checkVariants := func(name string, expectedVariants []string) {
-		t.Helper()
-		group := ctx.moduleGroupFromName(name, nil)
-		var gotVariants []string
-		for _, variant := range group.modules {
-			gotVariants = append(gotVariants, variant.moduleOrAliasVariant().variations["transition"])
-		}
-		if !slices.Equal(expectedVariants, gotVariants) {
-			t.Errorf("expected variants of %q to be %q, got %q", name, expectedVariants, gotVariants)
-		}
-	}
+func TestTransition(t *testing.T) {
+	ctx, errs := testTransition(fmt.Sprintf(testTransitionBp, ""))
+	assertNoErrors(t, errs)
 
 	// Module A uses Split to create a and b variants
-	checkVariants("A", []string{"a", "b"})
+	checkTransitionVariants(t, ctx, "A", []string{"a", "b"})
 	// Module B inherits a and b variants from A
-	checkVariants("B", []string{"", "a", "b"})
+	checkTransitionVariants(t, ctx, "B", []string{"", "a", "b"})
 	// Module C inherits a and b variants from A, but gets an outgoing c variant from B
-	checkVariants("C", []string{"", "a", "b", "c"})
+	checkTransitionVariants(t, ctx, "C", []string{"", "a", "b", "c"})
 	// Module D always has incoming variant d
-	checkVariants("D", []string{"", "d"})
+	checkTransitionVariants(t, ctx, "D", []string{"", "d"})
+	// Module E inherits d from D
+	checkTransitionVariants(t, ctx, "E", []string{"", "d"})
 
-	A_a := getModule("A", "a")
-	A_b := getModule("A", "b")
-	B_a := getModule("B", "a")
-	B_b := getModule("B", "b")
-	C_a := getModule("C", "a")
-	C_b := getModule("C", "b")
-	C_c := getModule("C", "c")
-	D_d := getModule("D", "d")
+	A_a := getTransitionModule(ctx, "A", "a")
+	A_b := getTransitionModule(ctx, "A", "b")
+	B_a := getTransitionModule(ctx, "B", "a")
+	B_b := getTransitionModule(ctx, "B", "b")
+	C_a := getTransitionModule(ctx, "C", "a")
+	C_b := getTransitionModule(ctx, "C", "b")
+	C_c := getTransitionModule(ctx, "C", "c")
+	D_d := getTransitionModule(ctx, "D", "d")
+	E_d := getTransitionModule(ctx, "E", "d")
 
-	checkDeps := func(m Module, expected ...string) {
-		var got []string
-		ctx.VisitDirectDeps(m, func(m Module) {
-			got = append(got, ctx.ModuleName(m)+"("+ctx.ModuleSubDir(m)+")")
-		})
-		if !slices.Equal(got, expected) {
-			t.Errorf("unexpected %q dependencies, got %q expected %q",
-				ctx.ModuleName(m), got, expected)
-		}
+	checkTransitionDeps(t, ctx, A_a, "B(a)", "C(a)")
+	checkTransitionDeps(t, ctx, A_b, "B(b)", "C(b)")
+	checkTransitionDeps(t, ctx, B_a, "C(c)")
+	checkTransitionDeps(t, ctx, B_b, "C(c)")
+	checkTransitionDeps(t, ctx, C_a, "D(d)")
+	checkTransitionDeps(t, ctx, C_b, "D(d)")
+	checkTransitionDeps(t, ctx, C_c, "D(d)")
+	checkTransitionDeps(t, ctx, D_d, "E(d)")
+	checkTransitionDeps(t, ctx, E_d)
+
+	checkTransitionMutate(t, A_a, "a")
+	checkTransitionMutate(t, A_b, "b")
+	checkTransitionMutate(t, B_a, "a")
+	checkTransitionMutate(t, B_b, "b")
+	checkTransitionMutate(t, C_a, "a")
+	checkTransitionMutate(t, C_b, "b")
+	checkTransitionMutate(t, C_c, "c")
+	checkTransitionMutate(t, D_d, "d")
+	checkTransitionMutate(t, E_d, "d")
+}
+
+func TestPostTransitionDeps(t *testing.T) {
+	ctx, errs := testTransition(fmt.Sprintf(testTransitionBp,
+		`post_transition_deps: ["D:late", "E:d"],`))
+	assertNoErrors(t, errs)
+
+	// Module A uses Split to create a and b variants
+	checkTransitionVariants(t, ctx, "A", []string{"a", "b"})
+	// Module B inherits a and b variants from A
+	checkTransitionVariants(t, ctx, "B", []string{"", "a", "b"})
+	// Module C inherits a and b variants from A, but gets an outgoing c variant from B
+	checkTransitionVariants(t, ctx, "C", []string{"", "a", "b", "c"})
+	// Module D always has incoming variant d
+	checkTransitionVariants(t, ctx, "D", []string{"", "d"})
+	// Module E inherits d from D
+	checkTransitionVariants(t, ctx, "E", []string{"", "d"})
+
+	A_a := getTransitionModule(ctx, "A", "a")
+	A_b := getTransitionModule(ctx, "A", "b")
+	B_a := getTransitionModule(ctx, "B", "a")
+	B_b := getTransitionModule(ctx, "B", "b")
+	C_a := getTransitionModule(ctx, "C", "a")
+	C_b := getTransitionModule(ctx, "C", "b")
+	C_c := getTransitionModule(ctx, "C", "c")
+	D_d := getTransitionModule(ctx, "D", "d")
+	E_d := getTransitionModule(ctx, "E", "d")
+
+	checkTransitionDeps(t, ctx, A_a, "B(a)", "C(a)")
+	checkTransitionDeps(t, ctx, A_b, "B(b)", "C(b)")
+	checkTransitionDeps(t, ctx, B_a, "C(c)", "D(d)", "E(d)")
+	checkTransitionDeps(t, ctx, B_b, "C(c)", "D(d)", "E(d)")
+	checkTransitionDeps(t, ctx, C_a, "D(d)")
+	checkTransitionDeps(t, ctx, C_b, "D(d)")
+	checkTransitionDeps(t, ctx, C_c, "D(d)")
+	checkTransitionDeps(t, ctx, D_d, "E(d)")
+	checkTransitionDeps(t, ctx, E_d)
+
+	checkTransitionMutate(t, A_a, "a")
+	checkTransitionMutate(t, A_b, "b")
+	checkTransitionMutate(t, B_a, "a")
+	checkTransitionMutate(t, B_b, "b")
+	checkTransitionMutate(t, C_a, "a")
+	checkTransitionMutate(t, C_b, "b")
+	checkTransitionMutate(t, C_c, "c")
+	checkTransitionMutate(t, D_d, "d")
+	checkTransitionMutate(t, E_d, "d")
+}
+
+func TestPostTransitionDepsMissingVariant(t *testing.T) {
+	// TODO: eventually this will create the missing variant on demand
+	_, errs := testTransition(fmt.Sprintf(testTransitionBp,
+		`post_transition_deps: ["E:missing"],`))
+	expectedError := `Android.bp:8:4: dependency "E" of "B" missing variant:
+  transition:missing
+available variants:
+  transition:
+  transition:d`
+	if len(errs) != 1 || errs[0].Error() != expectedError {
+		t.Errorf("expected error %q, got %q", expectedError, errs)
 	}
-
-	checkDeps(A_a, "B(a)", "C(a)")
-	checkDeps(A_b, "B(b)", "C(b)")
-	checkDeps(B_a, "C(c)")
-	checkDeps(B_b, "C(c)")
-	checkDeps(C_a, "D(d)")
-	checkDeps(C_b, "D(d)")
-	checkDeps(C_c, "D(d)")
-	checkDeps(D_d)
-
-	checkMutate := func(m *transitionModule, variant string) {
-		t.Helper()
-		if m.properties.Mutated != variant {
-			t.Errorf("unexpected mutated property in %q, expected %q got %q", m.Name(), variant, m.properties.Mutated)
-		}
-	}
-
-	checkMutate(A_a, "a")
-	checkMutate(A_b, "b")
-	checkMutate(B_a, "a")
-	checkMutate(B_b, "b")
-	checkMutate(C_a, "a")
-	checkMutate(C_b, "b")
-	checkMutate(C_c, "c")
-	checkMutate(D_d, "d")
 }
 
 type transitionTestMutator struct{}
@@ -172,10 +260,11 @@ func (transitionTestMutator) Mutate(ctx BottomUpMutatorContext, variation string
 type transitionModule struct {
 	SimpleName
 	properties struct {
-		Deps     []string
-		Split    []string
-		Outgoing *string
-		Incoming *string
+		Deps                 []string
+		Post_transition_deps []string
+		Split                []string
+		Outgoing             *string
+		Incoming             *string
 
 		Mutated string `blueprint:"mutated"`
 	}
@@ -195,4 +284,14 @@ func (f *transitionModule) Deps() []string {
 
 func (f *transitionModule) IgnoreDeps() []string {
 	return nil
+}
+
+func postTransitionDepsMutator(mctx BottomUpMutatorContext) {
+	if m, ok := mctx.Module().(*transitionModule); ok {
+		for _, dep := range m.properties.Post_transition_deps {
+			module, variation, _ := strings.Cut(dep, ":")
+			variations := []Variation{{"transition", variation}}
+			mctx.AddVariationDependencies(variations, walkerDepsTag{follow: true}, module)
+		}
+	}
 }
