@@ -829,7 +829,8 @@ func Test_findVariant(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, _ := findVariant(module, tt.possibleDeps, tt.variations, tt.far, tt.reverse)
+			ctx := NewContext()
+			got, _ := ctx.findVariant(module, nil, tt.possibleDeps, tt.variations, tt.far, tt.reverse)
 			if g, w := got == nil, tt.want == "nil"; g != w {
 				t.Fatalf("findVariant() got = %v, want %v", got, tt.want)
 			}

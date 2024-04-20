@@ -91,6 +91,8 @@ type Context struct {
 	mutatorInfo         []*mutatorInfo
 	variantMutatorNames []string
 
+	transitionMutators []*transitionMutatorImpl
+
 	depsModified uint32 // positive if a mutator modified the dependencies
 
 	dependenciesReady bool // set to true on a successful ResolveDependencies
@@ -455,10 +457,11 @@ type singletonInfo struct {
 
 type mutatorInfo struct {
 	// set during RegisterMutator
-	topDownMutator  TopDownMutator
-	bottomUpMutator BottomUpMutator
-	name            string
-	parallel        bool
+	topDownMutator    TopDownMutator
+	bottomUpMutator   BottomUpMutator
+	name              string
+	parallel          bool
+	transitionMutator *transitionMutatorImpl
 }
 
 func newContext() *Context {
@@ -686,10 +689,17 @@ type MutatorHandle interface {
 	// method on the mutator context is thread-safe, but the mutator must handle synchronization
 	// for any modifications to global state or any modules outside the one it was invoked on.
 	Parallel() MutatorHandle
+
+	setTransitionMutator(impl *transitionMutatorImpl) MutatorHandle
 }
 
 func (mutator *mutatorInfo) Parallel() MutatorHandle {
 	mutator.parallel = true
+	return mutator
+}
+
+func (mutator *mutatorInfo) setTransitionMutator(impl *transitionMutatorImpl) MutatorHandle {
+	mutator.transitionMutator = impl
 	return mutator
 }
 
@@ -1489,7 +1499,7 @@ func (c *Context) createVariations(origModule *moduleInfo, mutator *mutatorInfo,
 		var newLogicModule Module
 		var newProperties []interface{}
 
-		if i == 0 {
+		if i == 0 && mutator.transitionMutator == nil {
 			// Reuse the existing module for the first new variant
 			// This both saves creating a new module, and causes the insertion in c.moduleInfo below
 			// with logicModule as the key to replace the original entry in c.moduleInfo
@@ -1736,6 +1746,8 @@ func (c *Context) resolveDependencies(ctx context.Context, config interface{}) (
 		}
 		defer c.EndEvent("clone_modules")
 
+		c.clearTransitionMutatorInputVariants()
+
 		c.dependenciesReady = true
 	})
 
@@ -1772,8 +1784,8 @@ func blueprintDepsMutator(ctx BottomUpMutatorContext) {
 // findExactVariantOrSingle searches the moduleGroup for a module with the same variant as module,
 // and returns the matching module, or nil if one is not found.  A group with exactly one module
 // is always considered matching.
-func findExactVariantOrSingle(module *moduleInfo, possible *moduleGroup, reverse bool) *moduleInfo {
-	found, _ := findVariant(module, possible, nil, false, reverse)
+func (c *Context) findExactVariantOrSingle(module *moduleInfo, config any, possible *moduleGroup, reverse bool) *moduleInfo {
+	found, _ := c.findVariant(module, config, possible, nil, false, reverse)
 	if found == nil {
 		for _, moduleOrAlias := range possible.modules {
 			if m := moduleOrAlias.module(); m != nil {
@@ -1788,7 +1800,7 @@ func findExactVariantOrSingle(module *moduleInfo, possible *moduleGroup, reverse
 	return found
 }
 
-func (c *Context) addDependency(module *moduleInfo, tag DependencyTag, depName string) (*moduleInfo, []error) {
+func (c *Context) addDependency(module *moduleInfo, config any, tag DependencyTag, depName string) (*moduleInfo, []error) {
 	if _, ok := tag.(BaseDependencyTag); ok {
 		panic("BaseDependencyTag is not allowed to be used directly!")
 	}
@@ -1805,7 +1817,7 @@ func (c *Context) addDependency(module *moduleInfo, tag DependencyTag, depName s
 		return nil, c.discoveredMissingDependencies(module, depName, nil)
 	}
 
-	if m := findExactVariantOrSingle(module, possibleDeps, false); m != nil {
+	if m := c.findExactVariantOrSingle(module, config, possibleDeps, false); m != nil {
 		module.newDirectDeps = append(module.newDirectDeps, depInfo{m, tag})
 		atomic.AddUint32(&c.depsModified, 1)
 		return m, nil
@@ -1825,7 +1837,7 @@ func (c *Context) addDependency(module *moduleInfo, tag DependencyTag, depName s
 	}}
 }
 
-func (c *Context) findReverseDependency(module *moduleInfo, destName string) (*moduleInfo, []error) {
+func (c *Context) findReverseDependency(module *moduleInfo, config any, destName string) (*moduleInfo, []error) {
 	if destName == module.Name() {
 		return nil, []error{&BlueprintError{
 			Err: fmt.Errorf("%q depends on itself", destName),
@@ -1842,7 +1854,7 @@ func (c *Context) findReverseDependency(module *moduleInfo, destName string) (*m
 		}}
 	}
 
-	if m := findExactVariantOrSingle(module, possibleDeps, true); m != nil {
+	if m := c.findExactVariantOrSingle(module, config, possibleDeps, true); m != nil {
 		return m, nil
 	}
 
@@ -1860,7 +1872,33 @@ func (c *Context) findReverseDependency(module *moduleInfo, destName string) (*m
 	}}
 }
 
-func findVariant(module *moduleInfo, possibleDeps *moduleGroup, variations []Variation, far bool, reverse bool) (*moduleInfo, variationMap) {
+// applyIncomingTransitions takes a variationMap being used to add a dependency on a module in a moduleGroup
+// and applies the IncomingTransition method of each completed TransitionMutator to modify the requested variation.
+// It finds a variant that existed before the TransitionMutator ran that is a subset of the requested variant to
+// use as the module context for IncomingTransition.
+func (c *Context) applyIncomingTransitions(config any, group *moduleGroup, variant variationMap) {
+	for _, transitionMutator := range c.transitionMutators {
+		for _, inputVariant := range transitionMutator.inputVariants[group] {
+			if inputVariant.variant.variations.subsetOf(variant) {
+				sourceVariation := variant[transitionMutator.name]
+
+				ctx := &incomingTransitionContextImpl{
+					transitionContextImpl{context: c, source: nil, dep: inputVariant,
+						depTag: nil, config: config},
+				}
+
+				outgoingVariation := transitionMutator.mutator.IncomingTransition(ctx, sourceVariation)
+				variant[transitionMutator.name] = outgoingVariation
+				break
+			}
+		}
+	}
+
+}
+
+func (c *Context) findVariant(module *moduleInfo, config any,
+	possibleDeps *moduleGroup, variations []Variation, far bool, reverse bool) (*moduleInfo, variationMap) {
+
 	// We can't just append variant.Variant to module.dependencyVariant.variantName and
 	// compare the strings because the result won't be in mutator registration order.
 	// Create a new map instead, and then deep compare the maps.
@@ -1882,6 +1920,8 @@ func findVariant(module *moduleInfo, possibleDeps *moduleGroup, variations []Var
 		newVariant[v.Mutator] = v.Variation
 	}
 
+	c.applyIncomingTransitions(config, possibleDeps, newVariant)
+
 	check := func(variant variationMap) bool {
 		if far {
 			return newVariant.subsetOf(variant)
@@ -1901,7 +1941,7 @@ func findVariant(module *moduleInfo, possibleDeps *moduleGroup, variations []Var
 	return foundDep, newVariant
 }
 
-func (c *Context) addVariationDependency(module *moduleInfo, variations []Variation,
+func (c *Context) addVariationDependency(module *moduleInfo, config any, variations []Variation,
 	tag DependencyTag, depName string, far bool) (*moduleInfo, []error) {
 	if _, ok := tag.(BaseDependencyTag); ok {
 		panic("BaseDependencyTag is not allowed to be used directly!")
@@ -1912,7 +1952,7 @@ func (c *Context) addVariationDependency(module *moduleInfo, variations []Variat
 		return nil, c.discoveredMissingDependencies(module, depName, nil)
 	}
 
-	foundDep, newVariant := findVariant(module, possibleDeps, variations, far, false)
+	foundDep, newVariant := c.findVariant(module, config, possibleDeps, variations, far, false)
 
 	if foundDep == nil {
 		if c.allowMissingDependencies {
@@ -2936,6 +2976,13 @@ func (c *Context) runMutator(config interface{}, mutator *mutatorInfo,
 
 	c.moduleInfo = newModuleInfo
 
+	isTransitionMutator := mutator.transitionMutator != nil
+
+	var transitionMutatorInputVariants map[*moduleGroup][]*moduleInfo
+	if isTransitionMutator {
+		transitionMutatorInputVariants = make(map[*moduleGroup][]*moduleInfo)
+	}
+
 	for _, group := range c.moduleGroups {
 		for i := 0; i < len(group.modules); i++ {
 			module := group.modules[i].module()
@@ -2946,6 +2993,10 @@ func (c *Context) runMutator(config interface{}, mutator *mutatorInfo,
 
 			// Update module group to contain newly split variants
 			if module.splitModules != nil {
+				if isTransitionMutator {
+					// For transition mutators, save the pre-split variant for reusing later in applyIncomingTransitions.
+					transitionMutatorInputVariants[group] = append(transitionMutatorInputVariants[group], module)
+				}
 				group.modules, i = spliceModules(group.modules, i, module.splitModules)
 			}
 
@@ -2996,6 +3047,11 @@ func (c *Context) runMutator(config interface{}, mutator *mutatorInfo,
 		}
 	}
 
+	if isTransitionMutator {
+		mutator.transitionMutator.inputVariants = transitionMutatorInputVariants
+		c.transitionMutators = append(c.transitionMutators, mutator.transitionMutator)
+	}
+
 	// Add in any new reverse dependencies that were added by the mutator
 	for module, deps := range reverseDeps {
 		sort.Sort(depSorter(deps))
@@ -3029,6 +3085,14 @@ func (c *Context) runMutator(config interface{}, mutator *mutatorInfo,
 	}
 
 	return deps, errs
+}
+
+// clearTransitionMutatorInputVariants removes the inputVariants field from every
+// TransitionMutator now that all dependencies have been resolved.
+func (c *Context) clearTransitionMutatorInputVariants() {
+	for _, mutator := range c.transitionMutators {
+		mutator.inputVariants = nil
+	}
 }
 
 // Replaces every build logic module with a clone of itself.  Prevents introducing problems where
