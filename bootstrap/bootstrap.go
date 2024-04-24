@@ -15,7 +15,9 @@
 package bootstrap
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -46,13 +48,13 @@ var (
 	compile = pctx.StaticRule("compile",
 		blueprint.RuleParams{
 			Command: "GOROOT='$goRoot' $compileCmd $parallelCompile -o $out.tmp " +
-				"$debugFlags -p $pkgPath -complete $incFlags -pack $in && " +
+				"$debugFlags -p $pkgPath -complete $incFlags $embedFlags -pack $in && " +
 				"if cmp --quiet $out.tmp $out; then rm $out.tmp; else mv -f $out.tmp $out; fi",
 			CommandDeps: []string{"$compileCmd"},
 			Description: "compile $out",
 			Restat:      true,
 		},
-		"pkgPath", "incFlags")
+		"pkgPath", "incFlags", "embedFlags")
 
 	link = pctx.StaticRule("link",
 		blueprint.RuleParams{
@@ -210,6 +212,7 @@ type GoPackage struct {
 		TestSrcs  []string
 		TestData  []string
 		PluginFor []string
+		EmbedSrcs []string
 
 		Darwin struct {
 			Srcs     []string
@@ -323,7 +326,7 @@ func (g *GoPackage) GenerateBuildActions(ctx blueprint.ModuleContext) {
 	testArchiveFile := filepath.Join(testRoot(ctx),
 		filepath.FromSlash(g.properties.PkgPath)+".a")
 	g.testResultFile = buildGoTest(ctx, testRoot(ctx), testArchiveFile,
-		g.properties.PkgPath, srcs, genSrcs, testSrcs)
+		g.properties.PkgPath, srcs, genSrcs, testSrcs, g.properties.EmbedSrcs)
 
 	// Don't build for test-only packages
 	if len(srcs) == 0 && len(genSrcs) == 0 {
@@ -336,7 +339,7 @@ func (g *GoPackage) GenerateBuildActions(ctx blueprint.ModuleContext) {
 	}
 
 	buildGoPackage(ctx, g.pkgRoot, g.properties.PkgPath, g.archiveFile,
-		srcs, genSrcs)
+		srcs, genSrcs, g.properties.EmbedSrcs)
 	blueprint.SetProvider(ctx, blueprint.SrcsFileProviderKey, blueprint.SrcsFileProviderData{SrcPaths: srcs})
 }
 
@@ -380,6 +383,7 @@ type GoBinary struct {
 		Srcs           []string
 		TestSrcs       []string
 		TestData       []string
+		EmbedSrcs      []string
 		PrimaryBuilder bool
 		Default        bool
 
@@ -493,9 +497,9 @@ func (g *GoBinary) GenerateBuildActions(ctx blueprint.ModuleContext) {
 	}
 
 	testDeps = buildGoTest(ctx, testRoot(ctx), testArchiveFile,
-		name, srcs, genSrcs, testSrcs)
+		name, srcs, genSrcs, testSrcs, g.properties.EmbedSrcs)
 
-	buildGoPackage(ctx, objDir, "main", archiveFile, srcs, genSrcs)
+	buildGoPackage(ctx, objDir, "main", archiveFile, srcs, genSrcs, g.properties.EmbedSrcs)
 
 	var linkDeps []string
 	var libDirFlags []string
@@ -561,8 +565,30 @@ func buildGoPluginLoader(ctx blueprint.ModuleContext, pkgPath, pluginSrc string)
 	return ret
 }
 
+func generateEmbedcfgFile(files []string, srcDir string, embedcfgFile string) {
+	embedcfg := struct {
+		Patterns map[string][]string
+		Files    map[string]string
+	}{
+		map[string][]string{},
+		map[string]string{},
+	}
+
+	for _, file := range files {
+		embedcfg.Patterns[file] = []string{file}
+		embedcfg.Files[file] = filepath.Join(srcDir, file)
+	}
+
+	embedcfgData, err := json.Marshal(&embedcfg)
+	if err != nil {
+		panic(err)
+	}
+
+	os.WriteFile(embedcfgFile, []byte(embedcfgData), 0644)
+}
+
 func buildGoPackage(ctx blueprint.ModuleContext, pkgRoot string,
-	pkgPath string, archiveFile string, srcs []string, genSrcs []string) {
+	pkgPath string, archiveFile string, srcs []string, genSrcs []string, embedSrcs []string) {
 
 	srcDir := moduleSrcDir(ctx)
 	srcFiles := pathtools.PrefixPaths(srcs, srcDir)
@@ -587,6 +613,12 @@ func buildGoPackage(ctx blueprint.ModuleContext, pkgRoot string,
 		compileArgs["incFlags"] = strings.Join(incFlags, " ")
 	}
 
+	if len(embedSrcs) > 0 {
+		embedcfgFile := archiveFile + ".embedcfg"
+		generateEmbedcfgFile(embedSrcs, srcDir, embedcfgFile)
+		compileArgs["embedFlags"] = "-embedcfg " + embedcfgFile
+	}
+
 	ctx.Build(pctx, blueprint.BuildParams{
 		Rule:      compile,
 		Outputs:   []string{archiveFile},
@@ -598,7 +630,7 @@ func buildGoPackage(ctx blueprint.ModuleContext, pkgRoot string,
 }
 
 func buildGoTest(ctx blueprint.ModuleContext, testRoot, testPkgArchive,
-	pkgPath string, srcs, genSrcs, testSrcs []string) []string {
+	pkgPath string, srcs, genSrcs, testSrcs []string, embedSrcs []string) []string {
 
 	if len(testSrcs) == 0 {
 		return nil
@@ -613,7 +645,7 @@ func buildGoTest(ctx blueprint.ModuleContext, testRoot, testPkgArchive,
 	testPassed := filepath.Join(testRoot, "test.passed")
 
 	buildGoPackage(ctx, testRoot, pkgPath, testPkgArchive,
-		append(srcs, testSrcs...), genSrcs)
+		append(srcs, testSrcs...), genSrcs, embedSrcs)
 
 	ctx.Build(pctx, blueprint.BuildParams{
 		Rule:    goTestMain,
