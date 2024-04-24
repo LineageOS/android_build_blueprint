@@ -356,7 +356,7 @@ func (ctx *unpackContext) unpackToConfigurable(propertyName string, property *pa
 		}
 		result := Configurable[string]{
 			propertyName: property.Name,
-			cases: []configurableCase[string]{{
+			cases: []ConfigurableCase[string]{{
 				value: &v.Value,
 			}},
 			appendWrapper: &appendWrapper[string]{},
@@ -373,7 +373,7 @@ func (ctx *unpackContext) unpackToConfigurable(propertyName string, property *pa
 		}
 		result := Configurable[bool]{
 			propertyName: property.Name,
-			cases: []configurableCase[bool]{{
+			cases: []ConfigurableCase[bool]{{
 				value: &v.Value,
 			}},
 			appendWrapper: &appendWrapper[bool]{},
@@ -407,7 +407,7 @@ func (ctx *unpackContext) unpackToConfigurable(propertyName string, property *pa
 			}
 			result := Configurable[[]string]{
 				propertyName: property.Name,
-				cases: []configurableCase[[]string]{{
+				cases: []ConfigurableCase[[]string]{{
 					value: &value,
 				}},
 				appendWrapper: &appendWrapper[[]string]{},
@@ -446,7 +446,7 @@ func (ctx *unpackContext) unpackToConfigurable(propertyName string, property *pa
 				Value:   c.Value,
 			}
 
-			patterns := make([]configurablePattern, len(c.Patterns))
+			patterns := make([]ConfigurablePattern, len(c.Patterns))
 			for i, pat := range c.Patterns {
 				switch pat := pat.(type) {
 				case *parser.String:

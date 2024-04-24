@@ -14,6 +14,7 @@
 package proptools
 
 import (
+	"fmt"
 	"reflect"
 	"slices"
 	"strconv"
@@ -152,13 +153,33 @@ func (v *configurablePatternType) String() string {
 	}
 }
 
-type configurablePattern struct {
+type ConfigurablePattern struct {
 	typ         configurablePatternType
 	stringValue string
 	boolValue   bool
 }
 
-func (p *configurablePattern) matchesValue(v ConfigurableValue) bool {
+func NewStringConfigurablePattern(s string) ConfigurablePattern {
+	return ConfigurablePattern{
+		typ:         configurablePatternTypeString,
+		stringValue: s,
+	}
+}
+
+func NewBoolConfigurablePattern(b bool) ConfigurablePattern {
+	return ConfigurablePattern{
+		typ:       configurablePatternTypeBool,
+		boolValue: b,
+	}
+}
+
+func NewDefaultConfigurablePattern() ConfigurablePattern {
+	return ConfigurablePattern{
+		typ: configurablePatternTypeDefault,
+	}
+}
+
+func (p *ConfigurablePattern) matchesValue(v ConfigurableValue) bool {
 	if p.typ == configurablePatternTypeDefault {
 		return true
 	}
@@ -178,7 +199,7 @@ func (p *configurablePattern) matchesValue(v ConfigurableValue) bool {
 	}
 }
 
-func (p *configurablePattern) matchesValueType(v ConfigurableValue) bool {
+func (p *ConfigurablePattern) matchesValueType(v ConfigurableValue) bool {
 	if p.typ == configurablePatternTypeDefault {
 		return true
 	}
@@ -188,25 +209,32 @@ func (p *configurablePattern) matchesValueType(v ConfigurableValue) bool {
 	return p.typ == v.typ.patternType()
 }
 
-type configurableCase[T ConfigurableElements] struct {
-	patterns []configurablePattern
+type ConfigurableCase[T ConfigurableElements] struct {
+	patterns []ConfigurablePattern
 	value    *T
 }
 
-func (c *configurableCase[T]) Clone() configurableCase[T] {
-	return configurableCase[T]{
+func (c *ConfigurableCase[T]) Clone() ConfigurableCase[T] {
+	return ConfigurableCase[T]{
 		patterns: slices.Clone(c.patterns),
 		value:    copyConfiguredValue(c.value),
 	}
 }
 
 type configurableCaseReflection interface {
-	initialize(patterns []configurablePattern, value interface{})
+	initialize(patterns []ConfigurablePattern, value interface{})
 }
 
-var _ configurableCaseReflection = &configurableCase[string]{}
+var _ configurableCaseReflection = &ConfigurableCase[string]{}
 
-func (c *configurableCase[T]) initialize(patterns []configurablePattern, value interface{}) {
+func NewConfigurableCase[T ConfigurableElements](patterns []ConfigurablePattern, value *T) ConfigurableCase[T] {
+	return ConfigurableCase[T]{
+		patterns: patterns,
+		value:    value,
+	}
+}
+
+func (c *ConfigurableCase[T]) initialize(patterns []ConfigurablePattern, value interface{}) {
 	c.patterns = patterns
 	c.value = value.(*T)
 }
@@ -217,13 +245,13 @@ func configurableCaseType(configuredType reflect.Type) reflect.Type {
 	// current reflection apis unfortunately
 	switch configuredType.Kind() {
 	case reflect.String:
-		return reflect.TypeOf(configurableCase[string]{})
+		return reflect.TypeOf(ConfigurableCase[string]{})
 	case reflect.Bool:
-		return reflect.TypeOf(configurableCase[bool]{})
+		return reflect.TypeOf(ConfigurableCase[bool]{})
 	case reflect.Slice:
 		switch configuredType.Elem().Kind() {
 		case reflect.String:
-			return reflect.TypeOf(configurableCase[[]string]{})
+			return reflect.TypeOf(ConfigurableCase[[]string]{})
 		}
 	}
 	panic("unimplemented")
@@ -259,12 +287,25 @@ type Configurable[T ConfigurableElements] struct {
 	marker        configurableMarker
 	propertyName  string
 	conditions    []ConfigurableCondition
-	cases         []configurableCase[T]
+	cases         []ConfigurableCase[T]
 	appendWrapper *appendWrapper[T]
 }
 
 // Ignore the warning about the unused marker variable, it's used via reflection
 var _ configurableMarker = Configurable[string]{}.marker
+
+func NewConfigurable[T ConfigurableElements](conditions []ConfigurableCondition, cases []ConfigurableCase[T]) Configurable[T] {
+	for _, c := range cases {
+		if len(c.patterns) != len(conditions) {
+			panic(fmt.Sprintf("All configurables cases must have as many patterns as the configurable has conditions. Expected: %d, found: %d", len(conditions), len(c.patterns)))
+		}
+	}
+	return Configurable[T]{
+		conditions:    conditions,
+		cases:         cases,
+		appendWrapper: &appendWrapper[T]{},
+	}
+}
 
 // appendWrapper exists so that we can set the value of append
 // from a non-pointer method receiver. (setAppend)
@@ -424,7 +465,7 @@ var _ configurablePtrReflection = &Configurable[string]{}
 func (c *Configurable[T]) initialize(propertyName string, conditions []ConfigurableCondition, cases any) {
 	c.propertyName = propertyName
 	c.conditions = conditions
-	c.cases = cases.([]configurableCase[T])
+	c.cases = cases.([]ConfigurableCase[T])
 	c.appendWrapper = &appendWrapper[T]{}
 }
 
@@ -468,7 +509,7 @@ func (c *Configurable[T]) clone() *Configurable[T] {
 	conditionsCopy := make([]ConfigurableCondition, len(c.conditions))
 	copy(conditionsCopy, c.conditions)
 
-	casesCopy := make([]configurableCase[T], len(c.cases))
+	casesCopy := make([]ConfigurableCase[T], len(c.cases))
 	for i, case_ := range c.cases {
 		casesCopy[i] = case_.Clone()
 	}
