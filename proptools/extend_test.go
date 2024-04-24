@@ -1265,8 +1265,8 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 							"foo",
 						},
 					}},
-					cases: []configurableCase[[]string]{{
-						patterns: []configurablePattern{{
+					cases: []ConfigurableCase[[]string]{{
+						patterns: []ConfigurablePattern{{
 							typ:         configurablePatternTypeString,
 							stringValue: "a",
 						}},
@@ -1283,8 +1283,8 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 							"bar",
 						},
 					}},
-					cases: []configurableCase[[]string]{{
-						patterns: []configurablePattern{{
+					cases: []ConfigurableCase[[]string]{{
+						patterns: []ConfigurablePattern{{
 							typ:         configurablePatternTypeString,
 							stringValue: "b",
 						}},
@@ -1302,8 +1302,8 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 							"foo",
 						},
 					}},
-					cases: []configurableCase[[]string]{{
-						patterns: []configurablePattern{{
+					cases: []ConfigurableCase[[]string]{{
+						patterns: []ConfigurablePattern{{
 							typ:         configurablePatternTypeString,
 							stringValue: "a",
 						}},
@@ -1317,8 +1317,8 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 									"bar",
 								},
 							}},
-							cases: []configurableCase[[]string]{{
-								patterns: []configurablePattern{{
+							cases: []ConfigurableCase[[]string]{{
+								patterns: []ConfigurablePattern{{
 									typ:         configurablePatternTypeString,
 									stringValue: "b",
 								}},
@@ -1342,8 +1342,8 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 							"foo",
 						},
 					}},
-					cases: []configurableCase[[]string]{{
-						patterns: []configurablePattern{{
+					cases: []ConfigurableCase[[]string]{{
+						patterns: []ConfigurablePattern{{
 							typ:         configurablePatternTypeString,
 							stringValue: "a",
 						}},
@@ -1360,8 +1360,8 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 							"bar",
 						},
 					}},
-					cases: []configurableCase[[]string]{{
-						patterns: []configurablePattern{{
+					cases: []ConfigurableCase[[]string]{{
+						patterns: []ConfigurablePattern{{
 							typ:         configurablePatternTypeString,
 							stringValue: "b",
 						}},
@@ -1378,8 +1378,8 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 							"bar",
 						},
 					}},
-					cases: []configurableCase[[]string]{{
-						patterns: []configurablePattern{{
+					cases: []ConfigurableCase[[]string]{{
+						patterns: []ConfigurablePattern{{
 							typ:         configurablePatternTypeString,
 							stringValue: "b",
 						}},
@@ -1394,8 +1394,8 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 									"foo",
 								},
 							}},
-							cases: []configurableCase[[]string]{{
-								patterns: []configurablePattern{{
+							cases: []ConfigurableCase[[]string]{{
+								patterns: []ConfigurablePattern{{
 									typ:         configurablePatternTypeString,
 									stringValue: "a",
 								}},

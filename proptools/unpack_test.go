@@ -734,7 +734,7 @@ var validUnpackTestCases = []struct {
 			}{
 				Foo: Configurable[string]{
 					propertyName: "foo",
-					cases: []configurableCase[string]{{
+					cases: []ConfigurableCase[string]{{
 						value: StringPtr("bar"),
 					}},
 					appendWrapper: &appendWrapper[string]{},
@@ -755,7 +755,7 @@ var validUnpackTestCases = []struct {
 			}{
 				Foo: Configurable[bool]{
 					propertyName: "foo",
-					cases: []configurableCase[bool]{{
+					cases: []ConfigurableCase[bool]{{
 						value: BoolPtr(true),
 					}},
 					appendWrapper: &appendWrapper[bool]{},
@@ -776,7 +776,7 @@ var validUnpackTestCases = []struct {
 			}{
 				Foo: Configurable[[]string]{
 					propertyName: "foo",
-					cases: []configurableCase[[]string]{{
+					cases: []ConfigurableCase[[]string]{{
 						value: &[]string{"a", "b"},
 					}},
 					appendWrapper: &appendWrapper[[]string]{},
@@ -808,23 +808,23 @@ var validUnpackTestCases = []struct {
 							"my_variable",
 						},
 					}},
-					cases: []configurableCase[string]{
+					cases: []ConfigurableCase[string]{
 						{
-							patterns: []configurablePattern{{
+							patterns: []ConfigurablePattern{{
 								typ:         configurablePatternTypeString,
 								stringValue: "a",
 							}},
 							value: StringPtr("a2"),
 						},
 						{
-							patterns: []configurablePattern{{
+							patterns: []ConfigurablePattern{{
 								typ:         configurablePatternTypeString,
 								stringValue: "b",
 							}},
 							value: StringPtr("b2"),
 						},
 						{
-							patterns: []configurablePattern{{
+							patterns: []ConfigurablePattern{{
 								typ: configurablePatternTypeDefault,
 							}},
 							value: StringPtr("c2"),
@@ -863,23 +863,23 @@ var validUnpackTestCases = []struct {
 							"my_variable",
 						},
 					}},
-					cases: []configurableCase[string]{
+					cases: []ConfigurableCase[string]{
 						{
-							patterns: []configurablePattern{{
+							patterns: []ConfigurablePattern{{
 								typ:         configurablePatternTypeString,
 								stringValue: "a",
 							}},
 							value: StringPtr("a2"),
 						},
 						{
-							patterns: []configurablePattern{{
+							patterns: []ConfigurablePattern{{
 								typ:         configurablePatternTypeString,
 								stringValue: "b",
 							}},
 							value: StringPtr("b2"),
 						},
 						{
-							patterns: []configurablePattern{{
+							patterns: []ConfigurablePattern{{
 								typ: configurablePatternTypeDefault,
 							}},
 							value: StringPtr("c2"),
@@ -895,23 +895,23 @@ var validUnpackTestCases = []struct {
 									"my_2nd_variable",
 								},
 							}},
-							cases: []configurableCase[string]{
+							cases: []ConfigurableCase[string]{
 								{
-									patterns: []configurablePattern{{
+									patterns: []ConfigurablePattern{{
 										typ:         configurablePatternTypeString,
 										stringValue: "d",
 									}},
 									value: StringPtr("d2"),
 								},
 								{
-									patterns: []configurablePattern{{
+									patterns: []ConfigurablePattern{{
 										typ:         configurablePatternTypeString,
 										stringValue: "e",
 									}},
 									value: StringPtr("e2"),
 								},
 								{
-									patterns: []configurablePattern{{
+									patterns: []ConfigurablePattern{{
 										typ: configurablePatternTypeDefault,
 									}},
 									value: StringPtr("f2"),
@@ -941,7 +941,7 @@ var validUnpackTestCases = []struct {
 			}{
 				Foo: Configurable[string]{
 					propertyName: "foo",
-					cases: []configurableCase[string]{
+					cases: []ConfigurableCase[string]{
 						{
 							value: StringPtr("asdf"),
 						},
@@ -950,7 +950,7 @@ var validUnpackTestCases = []struct {
 				},
 				Bar: Configurable[bool]{
 					propertyName: "bar",
-					cases: []configurableCase[bool]{
+					cases: []ConfigurableCase[bool]{
 						{
 							value: BoolPtr(true),
 						},
