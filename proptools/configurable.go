@@ -335,8 +335,11 @@ type appendWrapper[T ConfigurableElements] struct {
 // Get returns the final value for the configurable property.
 // A configurable property may be unset, in which case Get will return nil.
 func (c *Configurable[T]) Get(evaluator ConfigurableEvaluator) *T {
-	if c == nil || c.appendWrapper == nil {
+	if c == nil {
 		return nil
+	}
+	if c.appendWrapper == nil {
+		return c.evaluateNonTransitive(evaluator)
 	}
 	if c.appendWrapper.replace {
 		return replaceConfiguredValues(
@@ -488,19 +491,52 @@ func (c *Configurable[T]) initialize(propertyName string, conditions []Configura
 }
 
 func (c Configurable[T]) setAppend(append any, replace bool) {
+	// TODO(b/323382414) Update the propertyName of appended selects
 	if c.appendWrapper.append.isEmpty() {
-		c.appendWrapper.append = append.(Configurable[T])
+		x := append.(Configurable[T])
+		c.appendWrapper.append = *(&x).clone()
 		c.appendWrapper.replace = replace
 	} else {
-		c.appendWrapper.append.setAppend(append, replace)
+		// If we're replacing with something that always has a value set,
+		// we can optimize the code by replacing our entire append chain here.
+		if replace && append.(Configurable[T]).alwaysHasValue() {
+			x := append.(Configurable[T])
+			c.appendWrapper.append = *(&x).clone()
+			c.appendWrapper.replace = replace
+		} else {
+			c.appendWrapper.append.setAppend(append, replace)
+		}
 	}
 }
 
 func (c Configurable[T]) isEmpty() bool {
-	if c.appendWrapper != nil && !c.appendWrapper.append.isEmpty() {
+	if len(c.cases) > 1 {
 		return false
 	}
-	return len(c.cases) == 0
+	if len(c.cases) == 1 && c.cases[0].value != nil {
+		return false
+	}
+	if c.appendWrapper != nil {
+		return c.appendWrapper.append.isEmpty()
+	}
+	return true
+}
+
+func (c Configurable[T]) alwaysHasValue() bool {
+	if len(c.cases) == 0 {
+		return false
+	}
+	for _, c := range c.cases {
+		if c.value == nil {
+			return false
+		}
+	}
+
+	if c.appendWrapper != nil && !c.appendWrapper.append.isEmpty() {
+		return c.appendWrapper.append.alwaysHasValue()
+	}
+
+	return true
 }
 
 func (c Configurable[T]) configuredType() reflect.Type {
@@ -524,12 +560,18 @@ func (c *Configurable[T]) clone() *Configurable[T] {
 		}
 	}
 
-	conditionsCopy := make([]ConfigurableCondition, len(c.conditions))
-	copy(conditionsCopy, c.conditions)
+	var conditionsCopy []ConfigurableCondition
+	if c.conditions != nil {
+		conditionsCopy = make([]ConfigurableCondition, len(c.conditions))
+		copy(conditionsCopy, c.conditions)
+	}
 
-	casesCopy := make([]ConfigurableCase[T], len(c.cases))
-	for i, case_ := range c.cases {
-		casesCopy[i] = case_.Clone()
+	var casesCopy []ConfigurableCase[T]
+	if c.cases != nil {
+		casesCopy = make([]ConfigurableCase[T], len(c.cases))
+		for i, case_ := range c.cases {
+			casesCopy[i] = case_.Clone()
+		}
 	}
 
 	return &Configurable[T]{

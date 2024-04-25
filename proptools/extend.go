@@ -507,18 +507,24 @@ func ExtendBasicType(dstFieldValue, srcFieldValue reflect.Value, order Order) {
 		if !isConfigurable(srcFieldValue.Type()) {
 			panic("Should be unreachable")
 		}
-		if dstFieldValue.Interface().(configurableReflection).isEmpty() {
-			dstFieldValue.Set(srcFieldValue)
+		unpackedSrc := srcFieldValue.Interface().(configurableReflection)
+		unpackedDst := dstFieldValue.Interface().(configurableReflection)
+		if unpackedSrc.isEmpty() {
+			// Do nothing
+		} else if unpackedDst.isEmpty() {
+			dstFieldValue.Set(unpackedSrc.cloneToReflectValuePtr().Elem())
 		} else if order == Prepend {
-			srcFieldValue.Interface().(configurableReflection).setAppend(dstFieldValue.Interface(), false)
-			dstFieldValue.Set(srcFieldValue)
+			clonedSrc := unpackedSrc.cloneToReflectValuePtr().Elem()
+			clonedSrc.Interface().(configurableReflection).setAppend(dstFieldValue.Interface(), false)
+			dstFieldValue.Set(clonedSrc)
 		} else if order == Append {
-			dstFieldValue.Interface().(configurableReflection).setAppend(srcFieldValue.Interface(), false)
+			unpackedDst.setAppend(srcFieldValue.Interface(), false)
 		} else if order == Replace {
-			dstFieldValue.Interface().(configurableReflection).setAppend(srcFieldValue.Interface(), true)
+			unpackedDst.setAppend(srcFieldValue.Interface(), true)
 		} else if order == Prepend_replace {
-			srcFieldValue.Interface().(configurableReflection).setAppend(dstFieldValue.Interface(), true)
-			dstFieldValue.Set(srcFieldValue)
+			clonedSrc := unpackedSrc.cloneToReflectValuePtr().Elem()
+			clonedSrc.Interface().(configurableReflection).setAppend(dstFieldValue.Interface(), true)
+			dstFieldValue.Set(clonedSrc)
 		} else {
 			panic(fmt.Sprintf("Unexpected order: %d", order))
 		}
