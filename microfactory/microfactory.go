@@ -68,7 +68,24 @@ var (
 	goToolDir = filepath.Join(runtime.GOROOT(), "pkg", "tool", runtime.GOOS+"_"+runtime.GOARCH)
 	goVersion = findGoVersion()
 	isGo18    = strings.Contains(goVersion, "go1.8")
+	relGoRoot = runtime.GOROOT()
 )
+
+func init() {
+	// make the GoRoot relative
+	if filepath.IsAbs(relGoRoot) {
+		pwd, err := os.Getwd()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to get the current directory: %s\n", err)
+			return
+		}
+		relGoRoot, err = filepath.Rel(pwd, relGoRoot)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to get the GOROOT relative path: %s\n", err)
+			return
+		}
+	}
+}
 
 func findGoVersion() string {
 	if version, err := ioutil.ReadFile(filepath.Join(runtime.GOROOT(), "VERSION")); err == nil {
@@ -401,6 +418,9 @@ func (p *GoPackage) Compile(config *Config, outDir string) error {
 		"-o", p.output,
 		"-p", p.Name,
 		"-complete", "-pack", "-nolocalimports")
+	cmd.Env = []string{
+		"GOROOT=" + relGoRoot,
+	}
 	if !isGo18 && !config.Race {
 		cmd.Args = append(cmd.Args, "-c", fmt.Sprintf("%d", runtime.NumCPU()))
 	}
@@ -538,6 +558,9 @@ func (p *GoPackage) Link(config *Config, out string) error {
 	}
 	cmd.Args = append(cmd.Args, p.output)
 	cmd.Stdin = nil
+	cmd.Env = []string{
+		"GOROOT=" + relGoRoot,
+	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if config.Verbose {
@@ -605,6 +628,9 @@ func rebuildMicrofactory(config *Config, mybin string) bool {
 	}
 
 	cmd := exec.Command(mybin, os.Args[1:]...)
+	cmd.Env = []string{
+		"GOROOT=" + relGoRoot,
+	}
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
