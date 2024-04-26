@@ -507,26 +507,15 @@ func ExtendBasicType(dstFieldValue, srcFieldValue reflect.Value, order Order) {
 		if !isConfigurable(srcFieldValue.Type()) {
 			panic("Should be unreachable")
 		}
-		unpackedSrc := srcFieldValue.Interface().(configurableReflection)
+		replace := order == Prepend_replace || order == Replace
 		unpackedDst := dstFieldValue.Interface().(configurableReflection)
-		if unpackedSrc.isEmpty() {
-			// Do nothing
-		} else if unpackedDst.isEmpty() {
-			dstFieldValue.Set(unpackedSrc.cloneToReflectValuePtr().Elem())
-		} else if order == Prepend {
-			clonedSrc := unpackedSrc.cloneToReflectValuePtr().Elem()
-			clonedSrc.Interface().(configurableReflection).setAppend(dstFieldValue.Interface(), false)
-			dstFieldValue.Set(clonedSrc)
-		} else if order == Append {
-			unpackedDst.setAppend(srcFieldValue.Interface(), false)
-		} else if order == Replace {
-			unpackedDst.setAppend(srcFieldValue.Interface(), true)
-		} else if order == Prepend_replace {
-			clonedSrc := unpackedSrc.cloneToReflectValuePtr().Elem()
-			clonedSrc.Interface().(configurableReflection).setAppend(dstFieldValue.Interface(), true)
-			dstFieldValue.Set(clonedSrc)
+		if unpackedDst.isEmpty() {
+			// Properties that were never initialized via unpacking from a bp file value
+			// will have a nil inner value, making them unable to be modified without a pointer
+			// like we don't have here. So instead replace the whole configurable object.
+			dstFieldValue.Set(reflect.ValueOf(srcFieldValue.Interface().(configurableReflection).clone()))
 		} else {
-			panic(fmt.Sprintf("Unexpected order: %d", order))
+			unpackedDst.setAppend(srcFieldValue.Interface(), replace, prepend)
 		}
 	case reflect.Bool:
 		// Boolean OR
