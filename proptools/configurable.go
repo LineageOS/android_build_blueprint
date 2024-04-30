@@ -36,18 +36,44 @@ type configurableMarker bool
 
 var configurableMarkerType reflect.Type = reflect.TypeOf((*configurableMarker)(nil)).Elem()
 
+// ConfigurableCondition represents a condition that is being selected on, like
+// arch(), os(), soong_config_variable("namespace", "variable"), or other variables.
+// It's represented generically as a function name + arguments in blueprint, soong
+// interprets the function name and args into specific variable values.
+//
+// ConfigurableCondition is treated as an immutable object so that it may be shared
+// between different configurable properties.
 type ConfigurableCondition struct {
-	FunctionName string
-	Args         []string
+	functionName string
+	args         []string
+}
+
+func NewConfigurableCondition(functionName string, args []string) ConfigurableCondition {
+	return ConfigurableCondition{
+		functionName: functionName,
+		args:         slices.Clone(args),
+	}
+}
+
+func (c ConfigurableCondition) FunctionName() string {
+	return c.functionName
+}
+
+func (c ConfigurableCondition) NumArgs() int {
+	return len(c.args)
+}
+
+func (c ConfigurableCondition) Arg(i int) string {
+	return c.args[i]
 }
 
 func (c *ConfigurableCondition) String() string {
 	var sb strings.Builder
-	sb.WriteString(c.FunctionName)
+	sb.WriteString(c.functionName)
 	sb.WriteRune('(')
-	for i, arg := range c.Args {
+	for i, arg := range c.args {
 		sb.WriteString(strconv.Quote(arg))
-		if i < len(c.Args)-1 {
+		if i < len(c.args)-1 {
 			sb.WriteString(", ")
 		}
 	}
@@ -153,6 +179,16 @@ func (v *configurablePatternType) String() string {
 	}
 }
 
+// ConfigurablePattern represents a concrete value for a ConfigurableCase.
+// Currently this just means the value of whatever variable is being looked
+// up with the ConfigurableCase, but in the future it may be expanded to
+// match multiple values (e.g. ranges of integers like 3..7).
+//
+// ConfigurablePattern can represent different types of values, like
+// strings vs bools.
+//
+// ConfigurablePattern must be immutable so it can be shared between
+// different configurable properties.
 type ConfigurablePattern struct {
 	typ         configurablePatternType
 	stringValue string
@@ -209,16 +245,15 @@ func (p *ConfigurablePattern) matchesValueType(v ConfigurableValue) bool {
 	return p.typ == v.typ.patternType()
 }
 
+// ConfigurableCase represents a set of ConfigurablePatterns
+// (exactly 1 pattern per ConfigurableCase), and a value to use
+// if all of the patterns are matched.
+//
+// ConfigurableCase must be immutable so it can be shared between
+// different configurable properties.
 type ConfigurableCase[T ConfigurableElements] struct {
 	patterns []ConfigurablePattern
 	value    *T
-}
-
-func (c *ConfigurableCase[T]) Clone() ConfigurableCase[T] {
-	return ConfigurableCase[T]{
-		patterns: slices.Clone(c.patterns),
-		value:    copyConfiguredValue(c.value),
-	}
 }
 
 type configurableCaseReflection interface {
@@ -228,9 +263,11 @@ type configurableCaseReflection interface {
 var _ configurableCaseReflection = &ConfigurableCase[string]{}
 
 func NewConfigurableCase[T ConfigurableElements](patterns []ConfigurablePattern, value *T) ConfigurableCase[T] {
+	// Clone the values so they can't be modified from soong
+	patterns = slices.Clone(patterns)
 	return ConfigurableCase[T]{
 		patterns: patterns,
-		value:    value,
+		value:    copyConfiguredValue(value),
 	}
 }
 
@@ -255,6 +292,24 @@ func configurableCaseType(configuredType reflect.Type) reflect.Type {
 		}
 	}
 	panic("unimplemented")
+}
+
+// for the given T, return the reflect.type of Configurable[T]
+func configurableType(configuredType reflect.Type) (reflect.Type, error) {
+	// I don't think it's possible to do this generically with go's
+	// current reflection apis unfortunately
+	switch configuredType.Kind() {
+	case reflect.String:
+		return reflect.TypeOf(Configurable[string]{}), nil
+	case reflect.Bool:
+		return reflect.TypeOf(Configurable[bool]{}), nil
+	case reflect.Slice:
+		switch configuredType.Elem().Kind() {
+		case reflect.String:
+			return reflect.TypeOf(Configurable[[]string]{}), nil
+		}
+	}
+	return nil, fmt.Errorf("configurable structs can only contain strings, bools, or string slices, found %s", configuredType.String())
 }
 
 // Configurable can wrap the type of a blueprint property,
@@ -284,11 +339,22 @@ func configurableCaseType(configuredType reflect.Type) reflect.Type {
 // All configurable properties support being unset, so there is
 // no need to use a pointer type like Configurable[*string].
 type Configurable[T ConfigurableElements] struct {
-	marker        configurableMarker
-	propertyName  string
-	conditions    []ConfigurableCondition
-	cases         []ConfigurableCase[T]
-	appendWrapper *appendWrapper[T]
+	marker       configurableMarker
+	propertyName string
+	inner        *configurableInner[T]
+}
+
+type configurableInner[T ConfigurableElements] struct {
+	single  singleConfigurable[T]
+	replace bool
+	next    *configurableInner[T]
+}
+
+// singleConfigurable must be immutable so it can be reused
+// between multiple configurables
+type singleConfigurable[T ConfigurableElements] struct {
+	conditions []ConfigurableCondition
+	cases      []ConfigurableCase[T]
 }
 
 // Ignore the warning about the unused marker variable, it's used via reflection
@@ -300,52 +366,61 @@ func NewConfigurable[T ConfigurableElements](conditions []ConfigurableCondition,
 			panic(fmt.Sprintf("All configurables cases must have as many patterns as the configurable has conditions. Expected: %d, found: %d", len(conditions), len(c.patterns)))
 		}
 	}
+	// Clone the slices so they can't be modified from soong
+	conditions = slices.Clone(conditions)
+	cases = slices.Clone(cases)
 	return Configurable[T]{
-		conditions:    conditions,
-		cases:         cases,
-		appendWrapper: &appendWrapper[T]{},
+		inner: &configurableInner[T]{
+			single: singleConfigurable[T]{
+				conditions: conditions,
+				cases:      cases,
+			},
+		},
 	}
-}
-
-// appendWrapper exists so that we can set the value of append
-// from a non-pointer method receiver. (setAppend)
-type appendWrapper[T ConfigurableElements] struct {
-	append  Configurable[T]
-	replace bool
 }
 
 // Get returns the final value for the configurable property.
 // A configurable property may be unset, in which case Get will return nil.
 func (c *Configurable[T]) Get(evaluator ConfigurableEvaluator) *T {
-	if c == nil || c.appendWrapper == nil {
-		return nil
-	}
-	if c.appendWrapper.replace {
-		return replaceConfiguredValues(
-			c.evaluateNonTransitive(evaluator),
-			c.appendWrapper.append.Get(evaluator),
-		)
-	} else {
-		return appendConfiguredValues(
-			c.evaluateNonTransitive(evaluator),
-			c.appendWrapper.append.Get(evaluator),
-		)
-	}
+	result := c.inner.evaluate(c.propertyName, evaluator)
+	// Copy the result so that it can't be changed from soong
+	return copyConfiguredValue(result)
 }
 
 // GetOrDefault is the same as Get, but will return the provided default value if the property was unset.
 func (c *Configurable[T]) GetOrDefault(evaluator ConfigurableEvaluator, defaultValue T) T {
-	result := c.Get(evaluator)
+	result := c.inner.evaluate(c.propertyName, evaluator)
 	if result != nil {
-		return *result
+		// Copy the result so that it can't be changed from soong
+		return copyAndDereferenceConfiguredValue(result)
 	}
 	return defaultValue
 }
 
-func (c *Configurable[T]) evaluateNonTransitive(evaluator ConfigurableEvaluator) *T {
+func (c *configurableInner[T]) evaluate(propertyName string, evaluator ConfigurableEvaluator) *T {
+	if c == nil {
+		return nil
+	}
+	if c.next == nil {
+		return c.single.evaluateNonTransitive(propertyName, evaluator)
+	}
+	if c.replace {
+		return replaceConfiguredValues(
+			c.single.evaluateNonTransitive(propertyName, evaluator),
+			c.next.evaluate(propertyName, evaluator),
+		)
+	} else {
+		return appendConfiguredValues(
+			c.single.evaluateNonTransitive(propertyName, evaluator),
+			c.next.evaluate(propertyName, evaluator),
+		)
+	}
+}
+
+func (c *singleConfigurable[T]) evaluateNonTransitive(propertyName string, evaluator ConfigurableEvaluator) *T {
 	for i, case_ := range c.cases {
 		if len(c.conditions) != len(case_.patterns) {
-			evaluator.PropertyErrorf(c.propertyName, "Expected each case to have as many patterns as conditions. conditions: %d, len(cases[%d].patterns): %d", len(c.conditions), i, len(case_.patterns))
+			evaluator.PropertyErrorf(propertyName, "Expected each case to have as many patterns as conditions. conditions: %d, len(cases[%d].patterns): %d", len(c.conditions), i, len(case_.patterns))
 			return nil
 		}
 	}
@@ -355,13 +430,13 @@ func (c *Configurable[T]) evaluateNonTransitive(evaluator ConfigurableEvaluator)
 		} else if len(c.cases) == 1 {
 			return c.cases[0].value
 		} else {
-			evaluator.PropertyErrorf(c.propertyName, "Expected 0 or 1 branches in an unconfigured select, found %d", len(c.cases))
+			evaluator.PropertyErrorf(propertyName, "Expected 0 or 1 branches in an unconfigured select, found %d", len(c.cases))
 			return nil
 		}
 	}
 	values := make([]ConfigurableValue, len(c.conditions))
 	for i, condition := range c.conditions {
-		values[i] = evaluator.EvaluateConfiguration(condition, c.propertyName)
+		values[i] = evaluator.EvaluateConfiguration(condition, propertyName)
 	}
 	foundMatch := false
 	var result *T
@@ -369,7 +444,7 @@ func (c *Configurable[T]) evaluateNonTransitive(evaluator ConfigurableEvaluator)
 		allMatch := true
 		for i, pat := range case_.patterns {
 			if !pat.matchesValueType(values[i]) {
-				evaluator.PropertyErrorf(c.propertyName, "Expected all branches of a select on condition %s to have type %s, found %s", c.conditions[i].String(), values[i].typ.String(), pat.typ.String())
+				evaluator.PropertyErrorf(propertyName, "Expected all branches of a select on condition %s to have type %s, found %s", c.conditions[i].String(), values[i].typ.String(), pat.typ.String())
 				return nil
 			}
 			if !pat.matchesValue(values[i]) {
@@ -385,7 +460,7 @@ func (c *Configurable[T]) evaluateNonTransitive(evaluator ConfigurableEvaluator)
 	if foundMatch {
 		return result
 	}
-	evaluator.PropertyErrorf(c.propertyName, "%s had value %s, which was not handled by the select statement", c.conditions, values)
+	evaluator.PropertyErrorf(propertyName, "%s had value %s, which was not handled by the select statement", c.conditions, values)
 	return nil
 }
 
@@ -447,9 +522,9 @@ func replaceConfiguredValues[T ConfigurableElements](a, b *T) *T {
 // the property unpacking code. You can't call unexported methods from reflection,
 // (at least without unsafe pointer trickery) so this is the next best thing.
 type configurableReflection interface {
-	setAppend(append any, replace bool)
+	setAppend(append any, replace bool, prepend bool)
 	configuredType() reflect.Type
-	cloneToReflectValuePtr() reflect.Value
+	clone() any
 	isEmpty() bool
 }
 
@@ -464,62 +539,133 @@ var _ configurablePtrReflection = &Configurable[string]{}
 
 func (c *Configurable[T]) initialize(propertyName string, conditions []ConfigurableCondition, cases any) {
 	c.propertyName = propertyName
-	c.conditions = conditions
-	c.cases = cases.([]ConfigurableCase[T])
-	c.appendWrapper = &appendWrapper[T]{}
+	c.inner = &configurableInner[T]{
+		single: singleConfigurable[T]{
+			conditions: conditions,
+			cases:      cases.([]ConfigurableCase[T]),
+		},
+	}
 }
 
-func (c Configurable[T]) setAppend(append any, replace bool) {
-	if c.appendWrapper.append.isEmpty() {
-		c.appendWrapper.append = append.(Configurable[T])
-		c.appendWrapper.replace = replace
-	} else {
-		c.appendWrapper.append.setAppend(append, replace)
+func (c Configurable[T]) setAppend(append any, replace bool, prepend bool) {
+	a := append.(Configurable[T])
+	if a.inner.isEmpty() {
+		return
 	}
+	c.inner.setAppend(a.inner, replace, prepend)
+	if c.inner == c.inner.next {
+		panic("pointer loop")
+	}
+}
+
+func (c *configurableInner[T]) setAppend(append *configurableInner[T], replace bool, prepend bool) {
+	if c.isEmpty() {
+		*c = *append.clone()
+	} else if prepend {
+		if replace && c.alwaysHasValue() {
+			// The current value would always override the prepended value, so don't do anything
+			return
+		}
+		// We're going to replace the head node with the one from append, so allocate
+		// a new one here.
+		old := &configurableInner[T]{
+			single:  c.single,
+			replace: c.replace,
+			next:    c.next,
+		}
+		*c = *append.clone()
+		curr := c
+		for curr.next != nil {
+			curr = curr.next
+		}
+		curr.next = old
+		curr.replace = replace
+	} else {
+		// If we're replacing with something that always has a value set,
+		// we can optimize the code by replacing our entire append chain here.
+		if replace && append.alwaysHasValue() {
+			*c = *append.clone()
+		} else {
+			curr := c
+			for curr.next != nil {
+				curr = curr.next
+			}
+			curr.next = append.clone()
+			curr.replace = replace
+		}
+	}
+}
+
+func (c Configurable[T]) clone() any {
+	return Configurable[T]{
+		propertyName: c.propertyName,
+		inner:        c.inner.clone(),
+	}
+}
+
+func (c *configurableInner[T]) clone() *configurableInner[T] {
+	if c == nil {
+		return nil
+	}
+	return &configurableInner[T]{
+		// We don't need to clone the singleConfigurable because
+		// it's supposed to be immutable
+		single:  c.single,
+		replace: c.replace,
+		next:    c.next.clone(),
+	}
+}
+
+func (c *configurableInner[T]) isEmpty() bool {
+	if c == nil {
+		return true
+	}
+	if !c.single.isEmpty() {
+		return false
+	}
+	return c.next.isEmpty()
 }
 
 func (c Configurable[T]) isEmpty() bool {
-	if c.appendWrapper != nil && !c.appendWrapper.append.isEmpty() {
+	return c.inner.isEmpty()
+}
+
+func (c *singleConfigurable[T]) isEmpty() bool {
+	if c == nil {
+		return true
+	}
+	if len(c.cases) > 1 {
 		return false
 	}
-	return len(c.cases) == 0
+	if len(c.cases) == 1 && c.cases[0].value != nil {
+		return false
+	}
+	return true
+}
+
+func (c *configurableInner[T]) alwaysHasValue() bool {
+	for curr := c; curr != nil; curr = curr.next {
+		if curr.single.alwaysHasValue() {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *singleConfigurable[T]) alwaysHasValue() bool {
+	if len(c.cases) == 0 {
+		return false
+	}
+	for _, c := range c.cases {
+		if c.value == nil {
+			return false
+		}
+	}
+	return true
 }
 
 func (c Configurable[T]) configuredType() reflect.Type {
 	return reflect.TypeOf((*T)(nil)).Elem()
-}
-
-func (c Configurable[T]) cloneToReflectValuePtr() reflect.Value {
-	return reflect.ValueOf(c.clone())
-}
-
-func (c *Configurable[T]) clone() *Configurable[T] {
-	if c == nil {
-		return nil
-	}
-	var inner *appendWrapper[T]
-	if c.appendWrapper != nil {
-		inner = &appendWrapper[T]{}
-		if !c.appendWrapper.append.isEmpty() {
-			inner.append = *c.appendWrapper.append.clone()
-			inner.replace = c.appendWrapper.replace
-		}
-	}
-
-	conditionsCopy := make([]ConfigurableCondition, len(c.conditions))
-	copy(conditionsCopy, c.conditions)
-
-	casesCopy := make([]ConfigurableCase[T], len(c.cases))
-	for i, case_ := range c.cases {
-		casesCopy[i] = case_.Clone()
-	}
-
-	return &Configurable[T]{
-		propertyName:  c.propertyName,
-		conditions:    conditionsCopy,
-		cases:         casesCopy,
-		appendWrapper: inner,
-	}
 }
 
 func copyConfiguredValue[T ConfigurableElements](t *T) *T {
@@ -531,6 +677,16 @@ func copyConfiguredValue[T ConfigurableElements](t *T) *T {
 		result := any(slices.Clone(t2)).(T)
 		return &result
 	default:
-		return t
+		x := *t
+		return &x
+	}
+}
+
+func copyAndDereferenceConfiguredValue[T ConfigurableElements](t *T) T {
+	switch t2 := any(*t).(type) {
+	case []string:
+		return any(slices.Clone(t2)).(T)
+	default:
+		return *t
 	}
 }

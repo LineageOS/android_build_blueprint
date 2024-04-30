@@ -1258,138 +1258,11 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 			name: "Append configurable",
 			dst: &struct{ S Configurable[[]string] }{
 				S: Configurable[[]string]{
-					conditions: []ConfigurableCondition{{
-						FunctionName: "soong_config_variable",
-						Args: []string{
-							"my_namespace",
-							"foo",
-						},
-					}},
-					cases: []ConfigurableCase[[]string]{{
-						patterns: []ConfigurablePattern{{
-							typ:         configurablePatternTypeString,
-							stringValue: "a",
-						}},
-						value: &[]string{"1", "2"},
-					}},
-					appendWrapper: &appendWrapper[[]string]{},
-				},
-			},
-			src: &struct{ S Configurable[[]string] }{
-				S: Configurable[[]string]{
-					conditions: []ConfigurableCondition{{
-						FunctionName: "release_variable",
-						Args: []string{
-							"bar",
-						},
-					}},
-					cases: []ConfigurableCase[[]string]{{
-						patterns: []ConfigurablePattern{{
-							typ:         configurablePatternTypeString,
-							stringValue: "b",
-						}},
-						value: &[]string{"3", "4"},
-					}},
-					appendWrapper: &appendWrapper[[]string]{},
-				},
-			},
-			out: &struct{ S Configurable[[]string] }{
-				S: Configurable[[]string]{
-					conditions: []ConfigurableCondition{{
-						FunctionName: "soong_config_variable",
-						Args: []string{
-							"my_namespace",
-							"foo",
-						},
-					}},
-					cases: []ConfigurableCase[[]string]{{
-						patterns: []ConfigurablePattern{{
-							typ:         configurablePatternTypeString,
-							stringValue: "a",
-						}},
-						value: &[]string{"1", "2"},
-					}},
-					appendWrapper: &appendWrapper[[]string]{
-						append: Configurable[[]string]{
+					inner: &configurableInner[[]string]{
+						single: singleConfigurable[[]string]{
 							conditions: []ConfigurableCondition{{
-								FunctionName: "release_variable",
-								Args: []string{
-									"bar",
-								},
-							}},
-							cases: []ConfigurableCase[[]string]{{
-								patterns: []ConfigurablePattern{{
-									typ:         configurablePatternTypeString,
-									stringValue: "b",
-								}},
-								value: &[]string{"3", "4"},
-							}},
-							appendWrapper: &appendWrapper[[]string]{},
-						},
-					},
-				},
-			},
-		},
-		{
-			name:  "Prepend configurable",
-			order: Prepend,
-			dst: &struct{ S Configurable[[]string] }{
-				S: Configurable[[]string]{
-					conditions: []ConfigurableCondition{{
-						FunctionName: "soong_config_variable",
-						Args: []string{
-							"my_namespace",
-							"foo",
-						},
-					}},
-					cases: []ConfigurableCase[[]string]{{
-						patterns: []ConfigurablePattern{{
-							typ:         configurablePatternTypeString,
-							stringValue: "a",
-						}},
-						value: &[]string{"1", "2"},
-					}},
-					appendWrapper: &appendWrapper[[]string]{},
-				},
-			},
-			src: &struct{ S Configurable[[]string] }{
-				S: Configurable[[]string]{
-					conditions: []ConfigurableCondition{{
-						FunctionName: "release_variable",
-						Args: []string{
-							"bar",
-						},
-					}},
-					cases: []ConfigurableCase[[]string]{{
-						patterns: []ConfigurablePattern{{
-							typ:         configurablePatternTypeString,
-							stringValue: "b",
-						}},
-						value: &[]string{"3", "4"},
-					}},
-					appendWrapper: &appendWrapper[[]string]{},
-				},
-			},
-			out: &struct{ S Configurable[[]string] }{
-				S: Configurable[[]string]{
-					conditions: []ConfigurableCondition{{
-						FunctionName: "release_variable",
-						Args: []string{
-							"bar",
-						},
-					}},
-					cases: []ConfigurableCase[[]string]{{
-						patterns: []ConfigurablePattern{{
-							typ:         configurablePatternTypeString,
-							stringValue: "b",
-						}},
-						value: &[]string{"3", "4"},
-					}},
-					appendWrapper: &appendWrapper[[]string]{
-						append: Configurable[[]string]{
-							conditions: []ConfigurableCondition{{
-								FunctionName: "soong_config_variable",
-								Args: []string{
+								functionName: "soong_config_variable",
+								args: []string{
 									"my_namespace",
 									"foo",
 								},
@@ -1401,7 +1274,152 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 								}},
 								value: &[]string{"1", "2"},
 							}},
-							appendWrapper: &appendWrapper[[]string]{},
+						},
+					},
+				},
+			},
+			src: &struct{ S Configurable[[]string] }{
+				S: Configurable[[]string]{
+					inner: &configurableInner[[]string]{
+						single: singleConfigurable[[]string]{
+							conditions: []ConfigurableCondition{{
+								functionName: "release_variable",
+								args: []string{
+									"bar",
+								},
+							}},
+							cases: []ConfigurableCase[[]string]{{
+								patterns: []ConfigurablePattern{{
+									typ:         configurablePatternTypeString,
+									stringValue: "b",
+								}},
+								value: &[]string{"3", "4"},
+							}},
+						},
+					},
+				},
+			},
+			out: &struct{ S Configurable[[]string] }{
+				S: Configurable[[]string]{
+					inner: &configurableInner[[]string]{
+						single: singleConfigurable[[]string]{
+							conditions: []ConfigurableCondition{{
+								functionName: "soong_config_variable",
+								args: []string{
+									"my_namespace",
+									"foo",
+								},
+							}},
+							cases: []ConfigurableCase[[]string]{{
+								patterns: []ConfigurablePattern{{
+									typ:         configurablePatternTypeString,
+									stringValue: "a",
+								}},
+								value: &[]string{"1", "2"},
+							}},
+						},
+						next: &configurableInner[[]string]{
+							single: singleConfigurable[[]string]{
+								conditions: []ConfigurableCondition{{
+									functionName: "release_variable",
+									args: []string{
+										"bar",
+									},
+								}},
+								cases: []ConfigurableCase[[]string]{{
+									patterns: []ConfigurablePattern{{
+										typ:         configurablePatternTypeString,
+										stringValue: "b",
+									}},
+									value: &[]string{"3", "4"},
+								}},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:  "Prepend configurable",
+			order: Prepend,
+			dst: &struct{ S Configurable[[]string] }{
+				S: Configurable[[]string]{
+					inner: &configurableInner[[]string]{
+						single: singleConfigurable[[]string]{
+							conditions: []ConfigurableCondition{{
+								functionName: "soong_config_variable",
+								args: []string{
+									"my_namespace",
+									"foo",
+								},
+							}},
+							cases: []ConfigurableCase[[]string]{{
+								patterns: []ConfigurablePattern{{
+									typ:         configurablePatternTypeString,
+									stringValue: "a",
+								}},
+								value: &[]string{"1", "2"},
+							}},
+						},
+					},
+				},
+			},
+			src: &struct{ S Configurable[[]string] }{
+				S: Configurable[[]string]{
+					inner: &configurableInner[[]string]{
+						single: singleConfigurable[[]string]{
+							conditions: []ConfigurableCondition{{
+								functionName: "release_variable",
+								args: []string{
+									"bar",
+								},
+							}},
+							cases: []ConfigurableCase[[]string]{{
+								patterns: []ConfigurablePattern{{
+									typ:         configurablePatternTypeString,
+									stringValue: "b",
+								}},
+								value: &[]string{"3", "4"},
+							}},
+						},
+					},
+				},
+			},
+			out: &struct{ S Configurable[[]string] }{
+				S: Configurable[[]string]{
+					inner: &configurableInner[[]string]{
+						single: singleConfigurable[[]string]{
+							conditions: []ConfigurableCondition{{
+								functionName: "release_variable",
+								args: []string{
+									"bar",
+								},
+							}},
+							cases: []ConfigurableCase[[]string]{{
+								patterns: []ConfigurablePattern{{
+									typ:         configurablePatternTypeString,
+									stringValue: "b",
+								}},
+								value: &[]string{"3", "4"},
+							}},
+						},
+						next: &configurableInner[[]string]{
+							single: singleConfigurable[[]string]{
+								conditions: []ConfigurableCondition{{
+									functionName: "soong_config_variable",
+									args: []string{
+										"my_namespace",
+										"foo",
+									},
+								}},
+								cases: []ConfigurableCase[[]string]{{
+									patterns: []ConfigurablePattern{{
+										typ:         configurablePatternTypeString,
+										stringValue: "a",
+									}},
+									value: &[]string{"1", "2"},
+								}},
+							},
 						},
 					},
 				},
@@ -1868,6 +1886,150 @@ func appendMatchingPropertiesTestCases() []appendMatchingPropertiesTestCase {
 				},
 			},
 			err: extendPropertyErrorf("s", "mismatched types []int and []string"),
+		},
+		{
+			name:  "Append *bool to Configurable[bool]",
+			order: Append,
+			dst: []interface{}{
+				&struct{ S Configurable[bool] }{
+					S: Configurable[bool]{
+						inner: &configurableInner[bool]{
+							single: singleConfigurable[bool]{
+								conditions: []ConfigurableCondition{{
+									functionName: "soong_config_variable",
+									args: []string{
+										"my_namespace",
+										"foo",
+									},
+								}},
+								cases: []ConfigurableCase[bool]{{
+									patterns: []ConfigurablePattern{{
+										typ:         configurablePatternTypeString,
+										stringValue: "a",
+									}},
+									value: BoolPtr(true),
+								}, {
+									patterns: []ConfigurablePattern{{
+										typ: configurablePatternTypeDefault,
+									}},
+									value: BoolPtr(false),
+								}},
+							},
+						},
+					},
+				},
+			},
+			src: &struct{ S *bool }{
+				S: BoolPtr(true),
+			},
+			out: []interface{}{
+				&struct{ S Configurable[bool] }{
+					S: Configurable[bool]{
+						inner: &configurableInner[bool]{
+							single: singleConfigurable[bool]{
+								conditions: []ConfigurableCondition{{
+									functionName: "soong_config_variable",
+									args: []string{
+										"my_namespace",
+										"foo",
+									},
+								}},
+								cases: []ConfigurableCase[bool]{{
+									patterns: []ConfigurablePattern{{
+										typ:         configurablePatternTypeString,
+										stringValue: "a",
+									}},
+									value: BoolPtr(true),
+								}, {
+									patterns: []ConfigurablePattern{{
+										typ: configurablePatternTypeDefault,
+									}},
+									value: BoolPtr(false),
+								}},
+							},
+							next: &configurableInner[bool]{
+								single: singleConfigurable[bool]{
+									cases: []ConfigurableCase[bool]{{
+										value: BoolPtr(true),
+									}},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:  "Append bool to Configurable[bool]",
+			order: Append,
+			dst: []interface{}{
+				&struct{ S Configurable[bool] }{
+					S: Configurable[bool]{
+						inner: &configurableInner[bool]{
+							single: singleConfigurable[bool]{
+								conditions: []ConfigurableCondition{{
+									functionName: "soong_config_variable",
+									args: []string{
+										"my_namespace",
+										"foo",
+									},
+								}},
+								cases: []ConfigurableCase[bool]{{
+									patterns: []ConfigurablePattern{{
+										typ:         configurablePatternTypeString,
+										stringValue: "a",
+									}},
+									value: BoolPtr(true),
+								}, {
+									patterns: []ConfigurablePattern{{
+										typ: configurablePatternTypeDefault,
+									}},
+									value: BoolPtr(false),
+								}},
+							},
+						},
+					},
+				},
+			},
+			src: &struct{ S bool }{
+				S: true,
+			},
+			out: []interface{}{
+				&struct{ S Configurable[bool] }{
+					S: Configurable[bool]{
+						inner: &configurableInner[bool]{
+							single: singleConfigurable[bool]{
+								conditions: []ConfigurableCondition{{
+									functionName: "soong_config_variable",
+									args: []string{
+										"my_namespace",
+										"foo",
+									},
+								}},
+								cases: []ConfigurableCase[bool]{{
+									patterns: []ConfigurablePattern{{
+										typ:         configurablePatternTypeString,
+										stringValue: "a",
+									}},
+									value: BoolPtr(true),
+								}, {
+									patterns: []ConfigurablePattern{{
+										typ: configurablePatternTypeDefault,
+									}},
+									value: BoolPtr(false),
+								}},
+							},
+							next: &configurableInner[bool]{
+								single: singleConfigurable[bool]{
+									cases: []ConfigurableCase[bool]{{
+										value: BoolPtr(true),
+									}},
+								},
+							},
+						},
+					},
+				},
+			},
 		},
 	}
 }
