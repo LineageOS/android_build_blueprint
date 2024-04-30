@@ -62,6 +62,10 @@ func typeEqual(v1, v2 reflect.Value) bool {
 		return true
 	}
 
+	if isConfigurable(v1.Type()) {
+		return true
+	}
+
 	for i := 0; i < v1.NumField(); i++ {
 		v1 := v1.Field(i)
 		v2 := v2.Field(i)
@@ -91,6 +95,10 @@ func concreteType(v reflect.Value) bool {
 	}
 
 	if v.Kind() != reflect.Struct {
+		return true
+	}
+
+	if isConfigurable(v.Type()) {
 		return true
 	}
 
