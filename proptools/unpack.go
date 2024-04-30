@@ -356,10 +356,13 @@ func (ctx *unpackContext) unpackToConfigurable(propertyName string, property *pa
 		}
 		result := Configurable[string]{
 			propertyName: property.Name,
-			cases: []ConfigurableCase[string]{{
-				value: &v.Value,
-			}},
-			appendWrapper: &appendWrapper[string]{},
+			inner: &configurableInner[string]{
+				single: singleConfigurable[string]{
+					cases: []ConfigurableCase[string]{{
+						value: &v.Value,
+					}},
+				},
+			},
 		}
 		return reflect.ValueOf(&result), true
 	case *parser.Bool:
@@ -373,10 +376,13 @@ func (ctx *unpackContext) unpackToConfigurable(propertyName string, property *pa
 		}
 		result := Configurable[bool]{
 			propertyName: property.Name,
-			cases: []ConfigurableCase[bool]{{
-				value: &v.Value,
-			}},
-			appendWrapper: &appendWrapper[bool]{},
+			inner: &configurableInner[bool]{
+				single: singleConfigurable[bool]{
+					cases: []ConfigurableCase[bool]{{
+						value: &v.Value,
+					}},
+				},
+			},
 		}
 		return reflect.ValueOf(&result), true
 	case *parser.List:
@@ -407,10 +413,13 @@ func (ctx *unpackContext) unpackToConfigurable(propertyName string, property *pa
 			}
 			result := Configurable[[]string]{
 				propertyName: property.Name,
-				cases: []ConfigurableCase[[]string]{{
-					value: &value,
-				}},
-				appendWrapper: &appendWrapper[[]string]{},
+				inner: &configurableInner[[]string]{
+					single: singleConfigurable[[]string]{
+						cases: []ConfigurableCase[[]string]{{
+							value: &value,
+						}},
+					},
+				},
 			}
 			return reflect.ValueOf(&result), true
 		default:
@@ -432,8 +441,8 @@ func (ctx *unpackContext) unpackToConfigurable(propertyName string, property *pa
 				args[j] = arg.Value
 			}
 			conditions[i] = ConfigurableCondition{
-				FunctionName: cond.FunctionName,
-				Args:         args,
+				functionName: cond.FunctionName,
+				args:         args,
 			}
 		}
 
@@ -512,7 +521,7 @@ func (ctx *unpackContext) unpackToConfigurable(propertyName string, property *pa
 			if !ok {
 				return reflect.New(configurableType), false
 			}
-			result.Interface().(configurableReflection).setAppend(val.Elem().Interface(), false)
+			result.Interface().(configurableReflection).setAppend(val.Elem().Interface(), false, false)
 		}
 		return resultPtr, true
 	default:
