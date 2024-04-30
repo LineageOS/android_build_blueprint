@@ -734,10 +734,13 @@ var validUnpackTestCases = []struct {
 			}{
 				Foo: Configurable[string]{
 					propertyName: "foo",
-					cases: []ConfigurableCase[string]{{
-						value: StringPtr("bar"),
-					}},
-					appendWrapper: &appendWrapper[string]{},
+					inner: &configurableInner[string]{
+						single: singleConfigurable[string]{
+							cases: []ConfigurableCase[string]{{
+								value: StringPtr("bar"),
+							}},
+						},
+					},
 				},
 			},
 		},
@@ -755,10 +758,13 @@ var validUnpackTestCases = []struct {
 			}{
 				Foo: Configurable[bool]{
 					propertyName: "foo",
-					cases: []ConfigurableCase[bool]{{
-						value: BoolPtr(true),
-					}},
-					appendWrapper: &appendWrapper[bool]{},
+					inner: &configurableInner[bool]{
+						single: singleConfigurable[bool]{
+							cases: []ConfigurableCase[bool]{{
+								value: BoolPtr(true),
+							}},
+						},
+					},
 				},
 			},
 		},
@@ -776,10 +782,13 @@ var validUnpackTestCases = []struct {
 			}{
 				Foo: Configurable[[]string]{
 					propertyName: "foo",
-					cases: []ConfigurableCase[[]string]{{
-						value: &[]string{"a", "b"},
-					}},
-					appendWrapper: &appendWrapper[[]string]{},
+					inner: &configurableInner[[]string]{
+						single: singleConfigurable[[]string]{
+							cases: []ConfigurableCase[[]string]{{
+								value: &[]string{"a", "b"},
+							}},
+						},
+					},
 				},
 			},
 		},
@@ -801,36 +810,39 @@ var validUnpackTestCases = []struct {
 			}{
 				Foo: Configurable[string]{
 					propertyName: "foo",
-					conditions: []ConfigurableCondition{{
-						FunctionName: "soong_config_variable",
-						Args: []string{
-							"my_namespace",
-							"my_variable",
-						},
-					}},
-					cases: []ConfigurableCase[string]{
-						{
-							patterns: []ConfigurablePattern{{
-								typ:         configurablePatternTypeString,
-								stringValue: "a",
+					inner: &configurableInner[string]{
+						single: singleConfigurable[string]{
+							conditions: []ConfigurableCondition{{
+								functionName: "soong_config_variable",
+								args: []string{
+									"my_namespace",
+									"my_variable",
+								},
 							}},
-							value: StringPtr("a2"),
-						},
-						{
-							patterns: []ConfigurablePattern{{
-								typ:         configurablePatternTypeString,
-								stringValue: "b",
-							}},
-							value: StringPtr("b2"),
-						},
-						{
-							patterns: []ConfigurablePattern{{
-								typ: configurablePatternTypeDefault,
-							}},
-							value: StringPtr("c2"),
+							cases: []ConfigurableCase[string]{
+								{
+									patterns: []ConfigurablePattern{{
+										typ:         configurablePatternTypeString,
+										stringValue: "a",
+									}},
+									value: StringPtr("a2"),
+								},
+								{
+									patterns: []ConfigurablePattern{{
+										typ:         configurablePatternTypeString,
+										stringValue: "b",
+									}},
+									value: StringPtr("b2"),
+								},
+								{
+									patterns: []ConfigurablePattern{{
+										typ: configurablePatternTypeDefault,
+									}},
+									value: StringPtr("c2"),
+								},
+							},
 						},
 					},
-					appendWrapper: &appendWrapper[string]{},
 				},
 			},
 		},
@@ -856,68 +868,70 @@ var validUnpackTestCases = []struct {
 			}{
 				Foo: Configurable[string]{
 					propertyName: "foo",
-					conditions: []ConfigurableCondition{{
-						FunctionName: "soong_config_variable",
-						Args: []string{
-							"my_namespace",
-							"my_variable",
-						},
-					}},
-					cases: []ConfigurableCase[string]{
-						{
-							patterns: []ConfigurablePattern{{
-								typ:         configurablePatternTypeString,
-								stringValue: "a",
-							}},
-							value: StringPtr("a2"),
-						},
-						{
-							patterns: []ConfigurablePattern{{
-								typ:         configurablePatternTypeString,
-								stringValue: "b",
-							}},
-							value: StringPtr("b2"),
-						},
-						{
-							patterns: []ConfigurablePattern{{
-								typ: configurablePatternTypeDefault,
-							}},
-							value: StringPtr("c2"),
-						},
-					},
-					appendWrapper: &appendWrapper[string]{
-						append: Configurable[string]{
-							propertyName: "foo",
+					inner: &configurableInner[string]{
+						single: singleConfigurable[string]{
 							conditions: []ConfigurableCondition{{
-								FunctionName: "soong_config_variable",
-								Args: []string{
+								functionName: "soong_config_variable",
+								args: []string{
 									"my_namespace",
-									"my_2nd_variable",
+									"my_variable",
 								},
 							}},
 							cases: []ConfigurableCase[string]{
 								{
 									patterns: []ConfigurablePattern{{
 										typ:         configurablePatternTypeString,
-										stringValue: "d",
+										stringValue: "a",
 									}},
-									value: StringPtr("d2"),
+									value: StringPtr("a2"),
 								},
 								{
 									patterns: []ConfigurablePattern{{
 										typ:         configurablePatternTypeString,
-										stringValue: "e",
+										stringValue: "b",
 									}},
-									value: StringPtr("e2"),
+									value: StringPtr("b2"),
 								},
 								{
 									patterns: []ConfigurablePattern{{
 										typ: configurablePatternTypeDefault,
 									}},
-									value: StringPtr("f2"),
+									value: StringPtr("c2"),
 								},
 							},
-							appendWrapper: &appendWrapper[string]{},
+						},
+						next: &configurableInner[string]{
+							single: singleConfigurable[string]{
+								conditions: []ConfigurableCondition{{
+									functionName: "soong_config_variable",
+									args: []string{
+										"my_namespace",
+										"my_2nd_variable",
+									},
+								}},
+								cases: []ConfigurableCase[string]{
+									{
+										patterns: []ConfigurablePattern{{
+											typ:         configurablePatternTypeString,
+											stringValue: "d",
+										}},
+										value: StringPtr("d2"),
+									},
+									{
+										patterns: []ConfigurablePattern{{
+											typ:         configurablePatternTypeString,
+											stringValue: "e",
+										}},
+										value: StringPtr("e2"),
+									},
+									{
+										patterns: []ConfigurablePattern{{
+											typ: configurablePatternTypeDefault,
+										}},
+										value: StringPtr("f2"),
+									},
+								},
+							},
 						},
 					},
 				},
@@ -941,21 +955,23 @@ var validUnpackTestCases = []struct {
 			}{
 				Foo: Configurable[string]{
 					propertyName: "foo",
-					cases: []ConfigurableCase[string]{
-						{
-							value: StringPtr("asdf"),
+					inner: &configurableInner[string]{
+						single: singleConfigurable[string]{
+							cases: []ConfigurableCase[string]{{
+								value: StringPtr("asdf"),
+							}},
 						},
 					},
-					appendWrapper: &appendWrapper[string]{},
 				},
 				Bar: Configurable[bool]{
 					propertyName: "bar",
-					cases: []ConfigurableCase[bool]{
-						{
-							value: BoolPtr(true),
+					inner: &configurableInner[bool]{
+						single: singleConfigurable[bool]{
+							cases: []ConfigurableCase[bool]{{
+								value: BoolPtr(true),
+							}},
 						},
 					},
-					appendWrapper: &appendWrapper[bool]{},
 				},
 			},
 		},
