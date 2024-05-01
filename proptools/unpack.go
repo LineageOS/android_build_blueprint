@@ -534,20 +534,18 @@ func (ctx *unpackContext) unpackToConfigurable(propertyName string, property *pa
 	}
 }
 
-func (ctx *unpackContext) reportSelectOnNonConfigurablePropertyError(
-	property *parser.Property,
-) bool {
+// If the given property is a select, returns an error saying that you can't assign a select to
+// a non-configurable property. Otherwise returns nil.
+func selectOnNonConfigurablePropertyError(property *parser.Property) error {
 	if _, ok := property.Value.Eval().(*parser.Select); !ok {
-		return false
+		return nil
 	}
 
-	ctx.addError(&UnpackError{
+	return &UnpackError{
 		fmt.Errorf("can't assign select statement to non-configurable property %q. This requires a small soong change to enable in most cases, please file a go/soong-bug if you'd like to use a select statement here",
 			property.Name),
 		property.Value.Pos(),
-	})
-
-	return true
+	}
 }
 
 // unpackSlice creates a value of a given slice or pointer to slice type from the property,
@@ -574,7 +572,9 @@ func (ctx *unpackContext) unpackToSliceInner(
 	sliceName string, property *parser.Property, sliceType reflect.Type) (reflect.Value, bool) {
 	propValueAsList, ok := property.Value.Eval().(*parser.List)
 	if !ok {
-		if !ctx.reportSelectOnNonConfigurablePropertyError(property) {
+		if err := selectOnNonConfigurablePropertyError(property); err != nil {
+			ctx.addError(err)
+		} else {
 			ctx.addError(&UnpackError{
 				fmt.Errorf("can't assign %s value to list property %q",
 					property.Value.Type(), property.Name),
@@ -659,10 +659,14 @@ func propertyToValue(typ reflect.Type, property *parser.Property) (reflect.Value
 	case reflect.Bool:
 		b, ok := property.Value.Eval().(*parser.Bool)
 		if !ok {
-			return value, &UnpackError{
-				fmt.Errorf("can't assign %s value to bool property %q",
-					property.Value.Type(), property.Name),
-				property.Value.Pos(),
+			if err := selectOnNonConfigurablePropertyError(property); err != nil {
+				return value, err
+			} else {
+				return value, &UnpackError{
+					fmt.Errorf("can't assign %s value to bool property %q",
+						property.Value.Type(), property.Name),
+					property.Value.Pos(),
+				}
 			}
 		}
 		value = reflect.ValueOf(b.Value)
@@ -681,10 +685,14 @@ func propertyToValue(typ reflect.Type, property *parser.Property) (reflect.Value
 	case reflect.String:
 		s, ok := property.Value.Eval().(*parser.String)
 		if !ok {
-			return value, &UnpackError{
-				fmt.Errorf("can't assign %s value to string property %q",
-					property.Value.Type(), property.Name),
-				property.Value.Pos(),
+			if err := selectOnNonConfigurablePropertyError(property); err != nil {
+				return value, err
+			} else {
+				return value, &UnpackError{
+					fmt.Errorf("can't assign %s value to string property %q",
+						property.Value.Type(), property.Name),
+					property.Value.Pos(),
+				}
 			}
 		}
 		value = reflect.ValueOf(s.Value)
