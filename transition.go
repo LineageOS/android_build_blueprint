@@ -294,7 +294,7 @@ func (t *transitionMutatorImpl) mutateMutator(mctx BottomUpMutatorContext) {
 func (c *Context) RegisterTransitionMutator(name string, mutator TransitionMutator) {
 	impl := &transitionMutatorImpl{name: name, mutator: mutator}
 
-	c.RegisterTopDownMutator(name+"_deps", impl.topDownMutator).Parallel()
+	c.RegisterTopDownMutator(name+"_propagate", impl.topDownMutator).Parallel()
 	c.RegisterBottomUpMutator(name, impl.bottomUpMutator).Parallel().setTransitionMutator(impl)
 	c.RegisterBottomUpMutator(name+"_mutate", impl.mutateMutator).Parallel()
 }
