@@ -924,15 +924,14 @@ type BottomUpMutatorContext interface {
 	// WalkDeps, etc.
 	AddInterVariantDependency(tag DependencyTag, from, to Module)
 
-	// ReplaceDependencies replaces all dependencies on the identical variant of the module with the
-	// specified name with the current variant of this module.  Replacements don't take effect until
-	// after the mutator pass is finished.
+	// ReplaceDependencies finds all the variants of the module with the specified name, then
+	// replaces all dependencies onto those variants with the current variant of this module.
+	// Replacements don't take effect until after the mutator pass is finished.
 	ReplaceDependencies(string)
 
-	// ReplaceDependenciesIf replaces all dependencies on the identical variant of the module with the
-	// specified name with the current variant of this module as long as the supplied predicate returns
-	// true.
-	//
+	// ReplaceDependenciesIf finds all the variants of the module with the specified name, then
+	// replaces all dependencies onto those variants with the current variant of this module
+	// as long as the supplied predicate returns true.
 	// Replacements don't take effect until after the mutator pass is finished.
 	ReplaceDependenciesIf(string, ReplaceDependencyPredicate)
 
@@ -1194,9 +1193,9 @@ func (mctx *mutatorContext) ReplaceDependencies(name string) {
 type ReplaceDependencyPredicate func(from Module, tag DependencyTag, to Module) bool
 
 func (mctx *mutatorContext) ReplaceDependenciesIf(name string, predicate ReplaceDependencyPredicate) {
-	target := mctx.context.moduleMatchingVariant(mctx.module, name)
+	targets := mctx.context.moduleVariantsThatDependOn(name, mctx.module)
 
-	if target == nil {
+	if len(targets) == 0 {
 		panic(fmt.Errorf("ReplaceDependencies could not find identical variant {%s} for module %s\n"+
 			"available variants:\n  %s",
 			mctx.context.prettyPrintVariant(mctx.module.variant.variations),
@@ -1204,7 +1203,9 @@ func (mctx *mutatorContext) ReplaceDependenciesIf(name string, predicate Replace
 			mctx.context.prettyPrintGroupVariants(mctx.context.moduleGroupFromName(name, mctx.module.namespace()))))
 	}
 
-	mctx.replace = append(mctx.replace, replace{target, mctx.module, predicate})
+	for _, target := range targets {
+		mctx.replace = append(mctx.replace, replace{target, mctx.module, predicate})
+	}
 }
 
 func (mctx *mutatorContext) Rename(name string) {
