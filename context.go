@@ -3485,20 +3485,29 @@ type rename struct {
 	name  string
 }
 
-func (c *Context) moduleMatchingVariant(module *moduleInfo, name string) *moduleInfo {
-	group := c.moduleGroupFromName(name, module.namespace())
+// moduleVariantsThatDependOn takes the name of a module and a dependency and returns the all the variants of the
+// module that depends on the dependency.
+func (c *Context) moduleVariantsThatDependOn(name string, dep *moduleInfo) []*moduleInfo {
+	group := c.moduleGroupFromName(name, dep.namespace())
+	var variants []*moduleInfo
 
 	if group == nil {
 		return nil
 	}
 
-	for _, m := range group.modules {
-		if module.variant.name == m.moduleOrAliasVariant().name {
-			return m.moduleOrAliasTarget()
+	for _, module := range group.modules {
+		m := module.module()
+		if m == nil {
+			continue
+		}
+		for _, moduleDep := range m.directDeps {
+			if moduleDep.module == dep {
+				variants = append(variants, m)
+			}
 		}
 	}
 
-	return nil
+	return variants
 }
 
 func (c *Context) handleRenames(renames []rename) []error {
