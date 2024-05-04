@@ -1876,8 +1876,16 @@ func (c *Context) findReverseDependency(module *moduleInfo, config any, destName
 // and applies the IncomingTransition method of each completed TransitionMutator to modify the requested variation.
 // It finds a variant that existed before the TransitionMutator ran that is a subset of the requested variant to
 // use as the module context for IncomingTransition.
-func (c *Context) applyIncomingTransitions(config any, group *moduleGroup, variant variationMap) {
+func (c *Context) applyIncomingTransitions(config any, group *moduleGroup, variant variationMap, requestedVariations []Variation) {
 	for _, transitionMutator := range c.transitionMutators {
+		if len(transitionMutator.inputVariants[group]) == 0 {
+			// The transition mutator didn't apply anything to the target module, remove the variation unless it
+			// was explicitly requested when adding the dependency.
+			if !slices.ContainsFunc(requestedVariations, func(v Variation) bool { return v.Mutator == transitionMutator.name }) {
+				delete(variant, transitionMutator.name)
+			}
+			continue
+		}
 		for _, inputVariant := range transitionMutator.inputVariants[group] {
 			if inputVariant.variant.variations.subsetOf(variant) {
 				sourceVariation := variant[transitionMutator.name]
@@ -1893,11 +1901,10 @@ func (c *Context) applyIncomingTransitions(config any, group *moduleGroup, varia
 			}
 		}
 	}
-
 }
 
 func (c *Context) findVariant(module *moduleInfo, config any,
-	possibleDeps *moduleGroup, variations []Variation, far bool, reverse bool) (*moduleInfo, variationMap) {
+	possibleDeps *moduleGroup, requestedVariations []Variation, far bool, reverse bool) (*moduleInfo, variationMap) {
 
 	// We can't just append variant.Variant to module.dependencyVariant.variantName and
 	// compare the strings because the result won't be in mutator registration order.
@@ -1913,14 +1920,14 @@ func (c *Context) findVariant(module *moduleInfo, config any,
 			newVariant = module.variant.variations.clone()
 		}
 	}
-	for _, v := range variations {
+	for _, v := range requestedVariations {
 		if newVariant == nil {
 			newVariant = make(variationMap)
 		}
 		newVariant[v.Mutator] = v.Variation
 	}
 
-	c.applyIncomingTransitions(config, possibleDeps, newVariant)
+	c.applyIncomingTransitions(config, possibleDeps, newVariant, requestedVariations)
 
 	check := func(variant variationMap) bool {
 		if far {
@@ -3478,20 +3485,29 @@ type rename struct {
 	name  string
 }
 
-func (c *Context) moduleMatchingVariant(module *moduleInfo, name string) *moduleInfo {
-	group := c.moduleGroupFromName(name, module.namespace())
+// moduleVariantsThatDependOn takes the name of a module and a dependency and returns the all the variants of the
+// module that depends on the dependency.
+func (c *Context) moduleVariantsThatDependOn(name string, dep *moduleInfo) []*moduleInfo {
+	group := c.moduleGroupFromName(name, dep.namespace())
+	var variants []*moduleInfo
 
 	if group == nil {
 		return nil
 	}
 
-	for _, m := range group.modules {
-		if module.variant.name == m.moduleOrAliasVariant().name {
-			return m.moduleOrAliasTarget()
+	for _, module := range group.modules {
+		m := module.module()
+		if m == nil {
+			continue
+		}
+		for _, moduleDep := range m.directDeps {
+			if moduleDep.module == dep {
+				variants = append(variants, m)
+			}
 		}
 	}
 
-	return nil
+	return variants
 }
 
 func (c *Context) handleRenames(renames []rename) []error {
