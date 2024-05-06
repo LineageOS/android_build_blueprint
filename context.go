@@ -3883,7 +3883,7 @@ func (c *Context) OutDir() (string, error) {
 // ModuleTypePropertyStructs returns a mapping from module type name to a list of pointers to
 // property structs returned by the factory for that module type.
 func (c *Context) ModuleTypePropertyStructs() map[string][]interface{} {
-	ret := make(map[string][]interface{})
+	ret := make(map[string][]interface{}, len(c.moduleFactories))
 	for moduleType, factory := range c.moduleFactories {
 		_, ret[moduleType] = factory()
 	}

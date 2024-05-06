@@ -156,3 +156,7 @@ func isMapOfStruct(t reflect.Type) bool {
 func isConfigurable(t reflect.Type) bool {
 	return isStruct(t) && t.NumField() > 0 && typeFields(t)[0].Type == configurableMarkerType
 }
+
+func IsConfigurable(t reflect.Type) bool {
+	return isConfigurable(t)
+}
