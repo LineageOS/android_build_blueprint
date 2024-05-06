@@ -180,7 +180,7 @@ func TestTransition(t *testing.T) {
 
 func TestPostTransitionDeps(t *testing.T) {
 	ctx, errs := testTransition(fmt.Sprintf(testTransitionBp,
-		`post_transition_deps: ["D:late", "E:d", "F"],`))
+		`post_transition_deps: ["C", "D:late", "E:d", "F"],`))
 	assertNoErrors(t, errs)
 
 	// Module A uses Split to create a and b variants
@@ -209,13 +209,13 @@ func TestPostTransitionDeps(t *testing.T) {
 
 	checkTransitionDeps(t, ctx, A_a, "B(a)", "C(a)")
 	checkTransitionDeps(t, ctx, A_b, "B(b)", "C(b)")
-	// Verify post-mutator dependencies added to B:
-	//  C(c) is a pre-mutator dependency
+	// Verify post-mutator dependencies added to B.  The first C(c) is a pre-mutator dependency.
+	//  C(c) was added by C and rewritten by OutgoingTransition on B
 	//  D(d) was added by D:late and rewritten by IncomingTransition on D
 	//  E(d) was added by E:d
 	//  F() was added by F, and ignored the existing variation on B
-	checkTransitionDeps(t, ctx, B_a, "C(c)", "D(d)", "E(d)", "F()")
-	checkTransitionDeps(t, ctx, B_b, "C(c)", "D(d)", "E(d)", "F()")
+	checkTransitionDeps(t, ctx, B_a, "C(c)", "C(c)", "D(d)", "E(d)", "F()")
+	checkTransitionDeps(t, ctx, B_b, "C(c)", "C(c)", "D(d)", "E(d)", "F()")
 	checkTransitionDeps(t, ctx, C_a, "D(d)")
 	checkTransitionDeps(t, ctx, C_b, "D(d)")
 	checkTransitionDeps(t, ctx, C_c, "D(d)")
