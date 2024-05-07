@@ -60,7 +60,7 @@ const testTransitionBp = `
 			transition_module {
 			    name: "A",
 			    deps: ["B", "C"],
-				split: ["a", "b"],
+				split: ["b", "a"],
 			}
 
 			transition_module {
@@ -132,7 +132,7 @@ func TestTransition(t *testing.T) {
 	assertNoErrors(t, errs)
 
 	// Module A uses Split to create a and b variants
-	checkTransitionVariants(t, ctx, "A", []string{"a", "b"})
+	checkTransitionVariants(t, ctx, "A", []string{"b", "a"})
 	// Module B inherits a and b variants from A
 	checkTransitionVariants(t, ctx, "B", []string{"", "a", "b"})
 	// Module C inherits a and b variants from A, but gets an outgoing c variant from B
@@ -184,7 +184,7 @@ func TestPostTransitionDeps(t *testing.T) {
 	assertNoErrors(t, errs)
 
 	// Module A uses Split to create a and b variants
-	checkTransitionVariants(t, ctx, "A", []string{"a", "b"})
+	checkTransitionVariants(t, ctx, "A", []string{"b", "a"})
 	// Module B inherits a and b variants from A
 	checkTransitionVariants(t, ctx, "B", []string{"", "a", "b"})
 	// Module C inherits a and b variants from A, but gets an outgoing c variant from B
