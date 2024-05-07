@@ -204,6 +204,10 @@ func nestedPropertyStructs(s reflect.Value) []nestedProperty {
 			if proptools.HasTag(field, "blueprint", "mutated") {
 				continue
 			}
+			if proptools.IsConfigurable(field.Type) {
+				// Don't recurse into configurable properties, they're structs but not property structs
+				continue
+			}
 
 			fieldValue := structValue.Field(i)
 

@@ -113,6 +113,10 @@ func TestAllPackages(t *testing.T) {
 				typ:  "list of structToNest",
 			},
 			propInfo{
+				name: "configurable_bool",
+				typ:  "configurable bool",
+			},
+			propInfo{
 				name: "nested_in_other_embedded",
 				typ:  "otherStructToNest",
 			},

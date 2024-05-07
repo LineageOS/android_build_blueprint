@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/google/blueprint"
+	"github.com/google/blueprint/proptools"
 )
 
 type factoryFn func() (blueprint.Module, []interface{})
@@ -81,6 +82,8 @@ type complexProps struct {
 	List_of_ints []int
 
 	List_of_nested []structToNest
+
+	Configurable_bool proptools.Configurable[bool]
 }
 
 // props docs.
