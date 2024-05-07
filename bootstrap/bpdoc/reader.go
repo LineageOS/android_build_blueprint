@@ -25,6 +25,8 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+
+	"github.com/google/blueprint/proptools"
 )
 
 // Handles parsing and low-level processing of Blueprint module source files. Note that most getter
@@ -119,7 +121,7 @@ func (r *Reader) PropertyStruct(pkgPath, name string, defaults reflect.Value) (*
 	var props []Property
 
 	// Base case: primitive type
-	if defaults.Kind() != reflect.Struct {
+	if defaults.Kind() != reflect.Struct || proptools.IsConfigurable(defaults.Type()) {
 		props = append(props, Property{Name: name,
 			Type: defaults.Type().String()})
 		return &PropertyStruct{Properties: props}, nil
