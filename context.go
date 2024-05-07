@@ -1878,14 +1878,7 @@ func (c *Context) findReverseDependency(module *moduleInfo, config any, destName
 // use as the module context for IncomingTransition.
 func (c *Context) applyIncomingTransitions(config any, group *moduleGroup, variant variationMap, requestedVariations []Variation) {
 	for _, transitionMutator := range c.transitionMutators {
-		if len(transitionMutator.inputVariants[group]) == 0 {
-			// The transition mutator didn't apply anything to the target module, remove the variation unless it
-			// was explicitly requested when adding the dependency.
-			if !slices.ContainsFunc(requestedVariations, func(v Variation) bool { return v.Mutator == transitionMutator.name }) {
-				delete(variant, transitionMutator.name)
-			}
-			continue
-		}
+		appliedIncomingTransition := false
 		for _, inputVariant := range transitionMutator.inputVariants[group] {
 			if inputVariant.variant.variations.subsetOf(variant) {
 				sourceVariation := variant[transitionMutator.name]
@@ -1897,7 +1890,15 @@ func (c *Context) applyIncomingTransitions(config any, group *moduleGroup, varia
 
 				outgoingVariation := transitionMutator.mutator.IncomingTransition(ctx, sourceVariation)
 				variant[transitionMutator.name] = outgoingVariation
+				appliedIncomingTransition = true
 				break
+			}
+		}
+		if !appliedIncomingTransition {
+			// The transition mutator didn't apply anything to the target module, remove the variation unless it
+			// was explicitly requested when adding the dependency.
+			if !slices.ContainsFunc(requestedVariations, func(v Variation) bool { return v.Mutator == transitionMutator.name }) {
+				delete(variant, transitionMutator.name)
 			}
 		}
 	}

@@ -84,6 +84,10 @@ const testTransitionBp = `
 			transition_module {
 				name: "E",
 			}
+
+			transition_module {
+				name: "F"
+			}
 		`
 
 func getTransitionModule(ctx *Context, name, variant string) *transitionModule {
@@ -137,6 +141,8 @@ func TestTransition(t *testing.T) {
 	checkTransitionVariants(t, ctx, "D", []string{"", "d"})
 	// Module E inherits d from D
 	checkTransitionVariants(t, ctx, "E", []string{"", "d"})
+	// Module F is untouched
+	checkTransitionVariants(t, ctx, "F", []string{""})
 
 	A_a := getTransitionModule(ctx, "A", "a")
 	A_b := getTransitionModule(ctx, "A", "b")
@@ -147,6 +153,7 @@ func TestTransition(t *testing.T) {
 	C_c := getTransitionModule(ctx, "C", "c")
 	D_d := getTransitionModule(ctx, "D", "d")
 	E_d := getTransitionModule(ctx, "E", "d")
+	F := getTransitionModule(ctx, "F", "")
 
 	checkTransitionDeps(t, ctx, A_a, "B(a)", "C(a)")
 	checkTransitionDeps(t, ctx, A_b, "B(b)", "C(b)")
@@ -157,6 +164,7 @@ func TestTransition(t *testing.T) {
 	checkTransitionDeps(t, ctx, C_c, "D(d)")
 	checkTransitionDeps(t, ctx, D_d, "E(d)")
 	checkTransitionDeps(t, ctx, E_d)
+	checkTransitionDeps(t, ctx, F)
 
 	checkTransitionMutate(t, A_a, "a")
 	checkTransitionMutate(t, A_b, "b")
@@ -167,11 +175,12 @@ func TestTransition(t *testing.T) {
 	checkTransitionMutate(t, C_c, "c")
 	checkTransitionMutate(t, D_d, "d")
 	checkTransitionMutate(t, E_d, "d")
+	checkTransitionMutate(t, F, "")
 }
 
 func TestPostTransitionDeps(t *testing.T) {
 	ctx, errs := testTransition(fmt.Sprintf(testTransitionBp,
-		`post_transition_deps: ["D:late", "E:d"],`))
+		`post_transition_deps: ["D:late", "E:d", "F"],`))
 	assertNoErrors(t, errs)
 
 	// Module A uses Split to create a and b variants
@@ -184,6 +193,8 @@ func TestPostTransitionDeps(t *testing.T) {
 	checkTransitionVariants(t, ctx, "D", []string{"", "d"})
 	// Module E inherits d from D
 	checkTransitionVariants(t, ctx, "E", []string{"", "d"})
+	// Module F is untouched
+	checkTransitionVariants(t, ctx, "F", []string{""})
 
 	A_a := getTransitionModule(ctx, "A", "a")
 	A_b := getTransitionModule(ctx, "A", "b")
@@ -194,16 +205,23 @@ func TestPostTransitionDeps(t *testing.T) {
 	C_c := getTransitionModule(ctx, "C", "c")
 	D_d := getTransitionModule(ctx, "D", "d")
 	E_d := getTransitionModule(ctx, "E", "d")
+	F := getTransitionModule(ctx, "F", "")
 
 	checkTransitionDeps(t, ctx, A_a, "B(a)", "C(a)")
 	checkTransitionDeps(t, ctx, A_b, "B(b)", "C(b)")
-	checkTransitionDeps(t, ctx, B_a, "C(c)", "D(d)", "E(d)")
-	checkTransitionDeps(t, ctx, B_b, "C(c)", "D(d)", "E(d)")
+	// Verify post-mutator dependencies added to B:
+	//  C(c) is a pre-mutator dependency
+	//  D(d) was added by D:late and rewritten by IncomingTransition on D
+	//  E(d) was added by E:d
+	//  F() was added by F, and ignored the existing variation on B
+	checkTransitionDeps(t, ctx, B_a, "C(c)", "D(d)", "E(d)", "F()")
+	checkTransitionDeps(t, ctx, B_b, "C(c)", "D(d)", "E(d)", "F()")
 	checkTransitionDeps(t, ctx, C_a, "D(d)")
 	checkTransitionDeps(t, ctx, C_b, "D(d)")
 	checkTransitionDeps(t, ctx, C_c, "D(d)")
 	checkTransitionDeps(t, ctx, D_d, "E(d)")
 	checkTransitionDeps(t, ctx, E_d)
+	checkTransitionDeps(t, ctx, F)
 
 	checkTransitionMutate(t, A_a, "a")
 	checkTransitionMutate(t, A_b, "b")
@@ -214,6 +232,7 @@ func TestPostTransitionDeps(t *testing.T) {
 	checkTransitionMutate(t, C_c, "c")
 	checkTransitionMutate(t, D_d, "d")
 	checkTransitionMutate(t, E_d, "d")
+	checkTransitionMutate(t, F, "")
 }
 
 func TestPostTransitionDepsMissingVariant(t *testing.T) {
@@ -290,7 +309,10 @@ func postTransitionDepsMutator(mctx BottomUpMutatorContext) {
 	if m, ok := mctx.Module().(*transitionModule); ok {
 		for _, dep := range m.properties.Post_transition_deps {
 			module, variation, _ := strings.Cut(dep, ":")
-			variations := []Variation{{"transition", variation}}
+			var variations []Variation
+			if variation != "" {
+				variations = append(variations, Variation{"transition", variation})
+			}
 			mctx.AddVariationDependencies(variations, walkerDepsTag{follow: true}, module)
 		}
 	}
