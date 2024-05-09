@@ -1877,7 +1877,7 @@ func (c *Context) findReverseDependency(module *moduleInfo, config any, destName
 // modify the requested variation.  It finds a variant that existed before the TransitionMutator ran that is
 // a subset of the requested variant to use as the module context for IncomingTransition.
 func (c *Context) applyTransitions(config any, module *moduleInfo, group *moduleGroup, variant variationMap,
-	requestedVariations []Variation) {
+	requestedVariations []Variation) variationMap {
 	for _, transitionMutator := range c.transitionMutators {
 		// Apply the outgoing transition if it was not explicitly requested.
 		explicitlyRequested := slices.ContainsFunc(requestedVariations, func(variation Variation) bool {
@@ -1903,6 +1903,9 @@ func (c *Context) applyTransitions(config any, module *moduleInfo, group *module
 				}
 
 				finalVariation := transitionMutator.mutator.IncomingTransition(ctx, outgoingVariation)
+				if variant == nil {
+					variant = make(variationMap)
+				}
 				variant[transitionMutator.name] = finalVariation
 				appliedIncomingTransition = true
 				break
@@ -1914,6 +1917,8 @@ func (c *Context) applyTransitions(config any, module *moduleInfo, group *module
 			delete(variant, transitionMutator.name)
 		}
 	}
+
+	return variant
 }
 
 func (c *Context) findVariant(module *moduleInfo, config any,
@@ -1940,7 +1945,7 @@ func (c *Context) findVariant(module *moduleInfo, config any,
 		newVariant[v.Mutator] = v.Variation
 	}
 
-	c.applyTransitions(config, module, possibleDeps, newVariant, requestedVariations)
+	newVariant = c.applyTransitions(config, module, possibleDeps, newVariant, requestedVariations)
 
 	check := func(variant variationMap) bool {
 		if far {
