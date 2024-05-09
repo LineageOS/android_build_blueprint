@@ -584,6 +584,7 @@ func generateEmbedcfgFile(files []string, srcDir string, embedcfgFile string) {
 		panic(err)
 	}
 
+	os.MkdirAll(filepath.Dir(embedcfgFile), os.ModePerm)
 	os.WriteFile(embedcfgFile, []byte(embedcfgData), 0644)
 }
 
