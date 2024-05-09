@@ -439,6 +439,7 @@ func (c *singleConfigurable[T]) evaluateNonTransitive(propertyName string, evalu
 		values[i] = evaluator.EvaluateConfiguration(condition, propertyName)
 	}
 	foundMatch := false
+	nonMatchingIndex := 0
 	var result *T
 	for _, case_ := range c.cases {
 		allMatch := true
@@ -449,6 +450,7 @@ func (c *singleConfigurable[T]) evaluateNonTransitive(propertyName string, evalu
 			}
 			if !pat.matchesValue(values[i]) {
 				allMatch = false
+				nonMatchingIndex = i
 				break
 			}
 		}
@@ -460,7 +462,8 @@ func (c *singleConfigurable[T]) evaluateNonTransitive(propertyName string, evalu
 	if foundMatch {
 		return result
 	}
-	evaluator.PropertyErrorf(propertyName, "%s had value %s, which was not handled by the select statement", c.conditions, values)
+
+	evaluator.PropertyErrorf(propertyName, "%s had value %s, which was not handled by the select statement", c.conditions[nonMatchingIndex].String(), values[nonMatchingIndex].String())
 	return nil
 }
 
