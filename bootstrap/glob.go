@@ -251,7 +251,7 @@ func generateGlobNinjaFile(glob *GlobSingleton, config interface{}) ([]byte, []e
 	}
 
 	buf := bytes.NewBuffer(nil)
-	err := ctx.WriteBuildFile(buf)
+	err := ctx.WriteBuildFile(buf, false, "")
 	if err != nil {
 		return nil, []error{err}
 	}

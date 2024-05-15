@@ -128,6 +128,7 @@ bootstrap_go_package {
         "proptools/tag.go",
         "proptools/typeequal.go",
         "proptools/unpack.go",
+        "proptools/utils.go",
     ],
     testSrcs: [
         "proptools/clone_test.go",
