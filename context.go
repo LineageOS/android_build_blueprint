@@ -15,6 +15,7 @@
 package blueprint
 
 import (
+	"bufio"
 	"bytes"
 	"cmp"
 	"context"
@@ -37,6 +38,7 @@ import (
 	"sync/atomic"
 	"text/scanner"
 	"text/template"
+	"time"
 	"unsafe"
 
 	"github.com/google/blueprint/metrics"
@@ -49,6 +51,8 @@ var ErrBuildActionsNotReady = errors.New("build actions are not ready")
 
 const maxErrors = 10
 const MockModuleListFile = "bplist"
+
+const OutFilePermissions = 0666
 
 // A Context contains all the state needed to parse a set of Blueprints files
 // and generate a Ninja file.  The process of generating a Ninja file proceeds
@@ -4164,7 +4168,7 @@ func (c *Context) VerifyProvidersWereUnchanged() []error {
 // WriteBuildFile writes the Ninja manifest text for the generated build
 // actions to w.  If this is called before PrepareBuildActions successfully
 // completes then ErrBuildActionsNotReady is returned.
-func (c *Context) WriteBuildFile(w StringWriterWriter) error {
+func (c *Context) WriteBuildFile(w StringWriterWriter, shardNinja bool, ninjaFileName string) error {
 	var err error
 	pprof.Do(c.Context, pprof.Labels("blueprint", "WriteBuildFile"), func(ctx context.Context) {
 		if !c.buildActionsReady {
@@ -4204,7 +4208,7 @@ func (c *Context) WriteBuildFile(w StringWriterWriter) error {
 			return
 		}
 
-		if err = c.writeAllModuleActions(nw); err != nil {
+		if err = c.writeAllModuleActions(nw, shardNinja, ninjaFileName); err != nil {
 			return
 		}
 
@@ -4473,14 +4477,19 @@ func (s moduleSorter) Swap(i, j int) {
 	s.modules[i], s.modules[j] = s.modules[j], s.modules[i]
 }
 
-func (c *Context) writeAllModuleActions(nw *ninjaWriter) error {
+func GetNinjaShardFiles(ninjaFile string) []string {
+	ninjaShardCnt := 10
+	fileNames := make([]string, ninjaShardCnt)
+
+	for i := 0; i < ninjaShardCnt; i++ {
+		fileNames[i] = fmt.Sprintf("%s.%d", ninjaFile, i)
+	}
+	return fileNames
+}
+
+func (c *Context) writeAllModuleActions(nw *ninjaWriter, shardNinja bool, ninjaFileName string) error {
 	c.BeginEvent("modules")
 	defer c.EndEvent("modules")
-	headerTemplate := template.New("moduleHeader")
-	if _, err := headerTemplate.Parse(moduleHeaderTemplate); err != nil {
-		// This is a programming error.
-		panic(err)
-	}
 
 	modules := make([]*moduleInfo, 0, len(c.moduleInfo))
 	for _, module := range c.moduleInfo {
@@ -4493,6 +4502,57 @@ func (c *Context) writeAllModuleActions(nw *ninjaWriter) error {
 		return err
 	}
 
+	headerTemplate := template.New("moduleHeader")
+	if _, err := headerTemplate.Parse(moduleHeaderTemplate); err != nil {
+		// This is a programming error.
+		panic(err)
+	}
+
+	if shardNinja {
+		errorCh := make(chan error)
+		fileNames := GetNinjaShardFiles(ninjaFileName)
+		shardedModules := proptools.ShardByCount(modules, len(fileNames))
+		ninjaShardCnt := len(shardedModules)
+		for i, batchModules := range shardedModules {
+			go func() {
+				f, err := os.OpenFile(filepath.Join(c.SrcDir(), fileNames[i]), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, OutFilePermissions)
+				if err != nil {
+					errorCh <- fmt.Errorf("error opening Ninja file: %s", err)
+					return
+				}
+				defer f.Close()
+				buf := bufio.NewWriterSize(f, 16*1024*1024)
+				defer buf.Flush()
+				writer := newNinjaWriter(buf)
+				errorCh <- c.writeModuleAction(batchModules, writer, headerTemplate)
+			}()
+			nw.Subninja(fileNames[i])
+		}
+
+		if ninjaShardCnt > 0 {
+			afterCh := time.After(60 * time.Second)
+			count := 1
+			for {
+				select {
+				case err := <-errorCh:
+					if err != nil {
+						return err
+					} else if count == ninjaShardCnt {
+						return nil
+					}
+					count++
+				case <-afterCh:
+					return fmt.Errorf("timed out when writing ninja file")
+				}
+			}
+		}
+		return nil
+	} else {
+		return c.writeModuleAction(modules, nw, headerTemplate)
+	}
+}
+
+func (c *Context) writeModuleAction(modules []*moduleInfo, nw *ninjaWriter, headerTemplate *template.Template) error {
 	buf := bytes.NewBuffer(nil)
 
 	for _, module := range modules {
