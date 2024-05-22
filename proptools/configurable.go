@@ -554,6 +554,7 @@ type configurableReflection interface {
 	configuredType() reflect.Type
 	clone() any
 	isEmpty() bool
+	printfInto(value string) error
 }
 
 // Same as configurableReflection, but since initialize needs to take a pointer
@@ -622,6 +623,60 @@ func (c *configurableInner[T]) setAppend(append *configurableInner[T], replace b
 			curr.replace = replace
 		}
 	}
+}
+
+func (c Configurable[T]) printfInto(value string) error {
+	return c.inner.printfInto(value)
+}
+
+func (c *configurableInner[T]) printfInto(value string) error {
+	for c != nil {
+		if err := c.single.printfInto(value); err != nil {
+			return err
+		}
+		c = c.next
+	}
+	return nil
+}
+
+func (c *singleConfigurable[T]) printfInto(value string) error {
+	for _, c := range c.cases {
+		if c.value == nil {
+			continue
+		}
+		switch v := any(c.value).(type) {
+		case *string:
+			if err := printfIntoString(v, value); err != nil {
+				return err
+			}
+		case *[]string:
+			for i := range *v {
+				if err := printfIntoString(&((*v)[i]), value); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func printfIntoString(s *string, configValue string) error {
+	count := strings.Count(*s, "%")
+	if count == 0 {
+		return nil
+	}
+
+	if count > 1 {
+		return fmt.Errorf("list/value variable properties only support a single '%%'")
+	}
+
+	if !strings.Contains(*s, "%s") {
+		return fmt.Errorf("unsupported %% in value variable property")
+	}
+
+	*s = fmt.Sprintf(*s, configValue)
+
+	return nil
 }
 
 func (c Configurable[T]) clone() any {
@@ -730,4 +785,11 @@ func copyAndDereferenceConfiguredValue[T ConfigurableElements](t *T) T {
 	default:
 		return *t
 	}
+}
+
+// PrintfIntoConfigurable replaces %s occurrences in strings in Configurable properties
+// with the provided string value. It's intention is to support soong config value variables
+// on Configurable properties.
+func PrintfIntoConfigurable(c any, value string) error {
+	return c.(configurableReflection).printfInto(value)
 }
