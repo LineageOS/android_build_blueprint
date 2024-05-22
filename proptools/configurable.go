@@ -19,7 +19,36 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/google/blueprint/optional"
 )
+
+// ConfigurableOptional is the same as ShallowOptional, but we use this separate
+// name to reserve the ability to switch to an alternative implementation later.
+type ConfigurableOptional[T any] struct {
+	shallowOptional optional.ShallowOptional[T]
+}
+
+// IsPresent returns true if the optional contains a value
+func (o *ConfigurableOptional[T]) IsPresent() bool {
+	return o.shallowOptional.IsPresent()
+}
+
+// IsEmpty returns true if the optional does not have a value
+func (o *ConfigurableOptional[T]) IsEmpty() bool {
+	return o.shallowOptional.IsEmpty()
+}
+
+// Get() returns the value inside the optional. It panics if IsEmpty() returns true
+func (o *ConfigurableOptional[T]) Get() T {
+	return o.shallowOptional.Get()
+}
+
+// GetOrDefault() returns the value inside the optional if IsPresent() returns true,
+// or the provided value otherwise.
+func (o *ConfigurableOptional[T]) GetOrDefault(other T) T {
+	return o.shallowOptional.GetOrDefault(other)
+}
 
 type ConfigurableElements interface {
 	string | bool | []string
@@ -381,10 +410,9 @@ func NewConfigurable[T ConfigurableElements](conditions []ConfigurableCondition,
 
 // Get returns the final value for the configurable property.
 // A configurable property may be unset, in which case Get will return nil.
-func (c *Configurable[T]) Get(evaluator ConfigurableEvaluator) *T {
+func (c *Configurable[T]) Get(evaluator ConfigurableEvaluator) ConfigurableOptional[T] {
 	result := c.inner.evaluate(c.propertyName, evaluator)
-	// Copy the result so that it can't be changed from soong
-	return copyConfiguredValue(result)
+	return configuredValuePtrToOptional(result)
 }
 
 // GetOrDefault is the same as Get, but will return the provided default value if the property was unset.
@@ -679,6 +707,19 @@ func copyConfiguredValue[T ConfigurableElements](t *T) *T {
 	default:
 		x := *t
 		return &x
+	}
+}
+
+func configuredValuePtrToOptional[T ConfigurableElements](t *T) ConfigurableOptional[T] {
+	if t == nil {
+		return ConfigurableOptional[T]{optional.NewShallowOptional(t)}
+	}
+	switch t2 := any(*t).(type) {
+	case []string:
+		result := any(slices.Clone(t2)).(T)
+		return ConfigurableOptional[T]{optional.NewShallowOptional(&result)}
+	default:
+		return ConfigurableOptional[T]{optional.NewShallowOptional(t)}
 	}
 }
 
