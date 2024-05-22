@@ -116,6 +116,7 @@ bootstrap_go_package {
     pkgPath: "github.com/google/blueprint/proptools",
     deps: [
         "blueprint-parser",
+        "blueprint-optional",
     ],
     srcs: [
         "proptools/clone.go",
@@ -128,6 +129,7 @@ bootstrap_go_package {
         "proptools/tag.go",
         "proptools/typeequal.go",
         "proptools/unpack.go",
+        "proptools/utils.go",
     ],
     testSrcs: [
         "proptools/clone_test.go",
@@ -138,6 +140,14 @@ bootstrap_go_package {
         "proptools/tag_test.go",
         "proptools/typeequal_test.go",
         "proptools/unpack_test.go",
+    ],
+}
+
+bootstrap_go_package {
+    name: "blueprint-optional",
+    pkgPath: "github.com/google/blueprint/optional",
+    srcs: [
+        "optional/optional.go",
     ],
 }
 

@@ -151,7 +151,6 @@ func RunBlueprint(args Args, stopBefore StopBefore, ctx *blueprint.Context, conf
 		providersValidationChan <- nil
 	}
 
-	const outFilePermissions = 0666
 	var out blueprint.StringWriterWriter
 	var f *os.File
 	var buf *bufio.Writer
@@ -159,12 +158,12 @@ func RunBlueprint(args Args, stopBefore StopBefore, ctx *blueprint.Context, conf
 	ctx.BeginEvent("write_files")
 	defer ctx.EndEvent("write_files")
 	if args.EmptyNinjaFile {
-		if err := os.WriteFile(joinPath(ctx.SrcDir(), args.OutFile), []byte(nil), outFilePermissions); err != nil {
+		if err := os.WriteFile(joinPath(ctx.SrcDir(), args.OutFile), []byte(nil), blueprint.OutFilePermissions); err != nil {
 			return nil, fmt.Errorf("error writing empty Ninja file: %s", err)
 		}
 		out = io.Discard.(blueprint.StringWriterWriter)
 	} else {
-		f, err := os.OpenFile(joinPath(ctx.SrcDir(), args.OutFile), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, outFilePermissions)
+		f, err := os.OpenFile(joinPath(ctx.SrcDir(), args.OutFile), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, blueprint.OutFilePermissions)
 		if err != nil {
 			return nil, fmt.Errorf("error opening Ninja file: %s", err)
 		}
@@ -173,7 +172,7 @@ func RunBlueprint(args Args, stopBefore StopBefore, ctx *blueprint.Context, conf
 		out = buf
 	}
 
-	if err := ctx.WriteBuildFile(out); err != nil {
+	if err := ctx.WriteBuildFile(out, !strings.Contains(args.OutFile, "bootstrap.ninja") && !args.EmptyNinjaFile, args.OutFile); err != nil {
 		return nil, fmt.Errorf("error writing Ninja file contents: %s", err)
 	}
 
