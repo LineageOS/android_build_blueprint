@@ -28,6 +28,7 @@ import (
 	"strings"
 
 	"github.com/google/blueprint"
+	"github.com/google/blueprint/proptools"
 )
 
 type Args struct {
@@ -190,14 +191,7 @@ func RunBlueprint(args Args, stopBefore StopBefore, ctx *blueprint.Context, conf
 
 	providerValidationErrors := <-providersValidationChan
 	if providerValidationErrors != nil {
-		var sb strings.Builder
-		for i, err := range providerValidationErrors {
-			if i != 0 {
-				sb.WriteString("\n")
-			}
-			sb.WriteString(err.Error())
-		}
-		return nil, errors.New(sb.String())
+		return nil, proptools.MergeErrors(providerValidationErrors)
 	}
 
 	if args.Memprofile != "" {

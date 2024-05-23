@@ -38,7 +38,6 @@ import (
 	"sync/atomic"
 	"text/scanner"
 	"text/template"
-	"time"
 	"unsafe"
 
 	"github.com/google/blueprint/metrics"
@@ -4509,42 +4508,52 @@ func (c *Context) writeAllModuleActions(nw *ninjaWriter, shardNinja bool, ninjaF
 	}
 
 	if shardNinja {
+		var wg sync.WaitGroup
 		errorCh := make(chan error)
-		fileNames := GetNinjaShardFiles(ninjaFileName)
-		shardedModules := proptools.ShardByCount(modules, len(fileNames))
-		ninjaShardCnt := len(shardedModules)
+		files := GetNinjaShardFiles(ninjaFileName)
+		shardedModules := proptools.ShardByCount(modules, len(files))
 		for i, batchModules := range shardedModules {
-			go func(i int, batchModules []*moduleInfo) {
-				f, err := os.OpenFile(filepath.Join(c.SrcDir(), fileNames[i]), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, OutFilePermissions)
+			file := files[i]
+			wg.Add(1)
+			go func(file string, batchModules []*moduleInfo) {
+				defer wg.Done()
+				f, err := os.OpenFile(filepath.Join(c.SrcDir(), file), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, OutFilePermissions)
 				if err != nil {
 					errorCh <- fmt.Errorf("error opening Ninja file: %s", err)
 					return
 				}
-				defer f.Close()
-				buf := bufio.NewWriterSize(f, 16*1024*1024)
-				defer buf.Flush()
-				writer := newNinjaWriter(buf)
-				errorCh <- c.writeModuleAction(batchModules, writer, headerTemplate)
-			}(i, batchModules)
-			nw.Subninja(fileNames[i])
-		}
-
-		if ninjaShardCnt > 0 {
-			afterCh := time.After(60 * time.Second)
-			count := 1
-			for {
-				select {
-				case err := <-errorCh:
+				defer func() {
+					err := f.Close()
 					if err != nil {
-						return err
-					} else if count == ninjaShardCnt {
-						return nil
+						errorCh <- err
 					}
-					count++
-				case <-afterCh:
-					return fmt.Errorf("timed out when writing ninja file")
+				}()
+				buf := bufio.NewWriterSize(f, 16*1024*1024)
+				defer func() {
+					err := buf.Flush()
+					if err != nil {
+						errorCh <- err
+					}
+				}()
+				writer := newNinjaWriter(buf)
+				err = c.writeModuleAction(batchModules, writer, headerTemplate)
+				if err != nil {
+					errorCh <- err
 				}
-			}
+			}(file, batchModules)
+			nw.Subninja(file)
+		}
+		go func() {
+			wg.Wait()
+			close(errorCh)
+		}()
+
+		var errors []error
+		for newErrors := range errorCh {
+			errors = append(errors, newErrors)
+		}
+		if len(errors) > 0 {
+			return proptools.MergeErrors(errors)
 		}
 		return nil
 	} else {
