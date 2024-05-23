@@ -4144,24 +4144,46 @@ func (c *Context) VerifyProvidersWereUnchanged() []error {
 	if !c.buildActionsReady {
 		return []error{ErrBuildActionsNotReady}
 	}
+	errorCh := make(chan []error)
+	doneCh := make(chan []error)
+	go func() {
+		doneCh <- parallelVisit(c.modulesSorted, unorderedVisitorImpl{}, parallelVisitLimit,
+			func(m *moduleInfo, pause chan<- pauseSpec) bool {
+				var errors []error
+				for i, provider := range m.providers {
+					if provider != nil {
+						hash, err := proptools.HashProvider(provider)
+						if err != nil {
+							errors = append(errors, fmt.Errorf("provider %q on module %q was modified after being set, and no longer hashable afterwards: %s", providerRegistry[i].typ, m.Name(), err.Error()))
+							continue
+						}
+						if m.providerInitialValueHashes[i] != hash {
+							errors = append(errors, fmt.Errorf("provider %q on module %q was modified after being set", providerRegistry[i].typ, m.Name()))
+						}
+					} else if m.providerInitialValueHashes[i] != 0 {
+						// This should be unreachable, because in setProvider we check if the provider has already been set.
+						errors = append(errors, fmt.Errorf("provider %q on module %q was unset somehow, this is an internal error", providerRegistry[i].typ, m.Name()))
+					}
+				}
+				if errors != nil {
+					errorCh <- errors
+				}
+				return false
+			})
+	}()
+
 	var errors []error
-	for _, m := range c.modulesSorted {
-		for i, provider := range m.providers {
-			if provider != nil {
-				hash, err := proptools.HashProvider(provider)
-				if err != nil {
-					errors = append(errors, fmt.Errorf("provider %q on module %q was modified after being set, and no longer hashable afterwards: %s", providerRegistry[i].typ, m.Name(), err.Error()))
-					continue
-				}
-				if provider != nil && m.providerInitialValueHashes[i] != hash {
-					errors = append(errors, fmt.Errorf("provider %q on module %q was modified after being set", providerRegistry[i].typ, m.Name()))
-				}
-			} else if m.providerInitialValueHashes[i] != 0 {
-				// This should be unreachable, because in setProvider we check if the provider has already been set.
-				errors = append(errors, fmt.Errorf("provider %q on module %q was unset somehow, this is an internal error", providerRegistry[i].typ, m.Name()))
-			}
+	done := false
+	for !done {
+		select {
+		case newErrors := <-doneCh:
+			errors = append(errors, newErrors...)
+			done = true
+		case newErrors := <-errorCh:
+			errors = append(errors, newErrors...)
 		}
 	}
+
 	return errors
 }
 
