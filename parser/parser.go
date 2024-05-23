@@ -390,6 +390,7 @@ func (p *parser) evaluateOperator(value1, value2 Expression, operator rune,
 					Cases: []*SelectCase{{
 						Value: e1,
 					}},
+					ExpressionType: e1.Type(),
 				}
 			}
 		}
