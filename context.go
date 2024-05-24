@@ -4144,23 +4144,50 @@ func (c *Context) VerifyProvidersWereUnchanged() []error {
 	if !c.buildActionsReady {
 		return []error{ErrBuildActionsNotReady}
 	}
-	var errors []error
-	for _, m := range c.modulesSorted {
-		for i, provider := range m.providers {
-			if provider != nil {
-				hash, err := proptools.HashProvider(provider)
-				if err != nil {
-					errors = append(errors, fmt.Errorf("provider %q on module %q was modified after being set, and no longer hashable afterwards: %s", providerRegistry[i].typ, m.Name(), err.Error()))
-					continue
-				}
-				if provider != nil && m.providerInitialValueHashes[i] != hash {
-					errors = append(errors, fmt.Errorf("provider %q on module %q was modified after being set", providerRegistry[i].typ, m.Name()))
-				}
-			} else if m.providerInitialValueHashes[i] != 0 {
-				// This should be unreachable, because in setProvider we check if the provider has already been set.
-				errors = append(errors, fmt.Errorf("provider %q on module %q was unset somehow, this is an internal error", providerRegistry[i].typ, m.Name()))
-			}
+	toProcess := make(chan *moduleInfo)
+	errorCh := make(chan []error)
+	var wg sync.WaitGroup
+	go func() {
+		for _, m := range c.modulesSorted {
+			toProcess <- m
 		}
+		close(toProcess)
+	}()
+	for i := 0; i < 1000; i++ {
+		wg.Add(1)
+		go func() {
+			var errors []error
+			for m := range toProcess {
+				for i, provider := range m.providers {
+					if provider != nil {
+						hash, err := proptools.HashProvider(provider)
+						if err != nil {
+							errors = append(errors, fmt.Errorf("provider %q on module %q was modified after being set, and no longer hashable afterwards: %s", providerRegistry[i].typ, m.Name(), err.Error()))
+							continue
+						}
+						if m.providerInitialValueHashes[i] != hash {
+							errors = append(errors, fmt.Errorf("provider %q on module %q was modified after being set", providerRegistry[i].typ, m.Name()))
+						}
+					} else if m.providerInitialValueHashes[i] != 0 {
+						// This should be unreachable, because in setProvider we check if the provider has already been set.
+						errors = append(errors, fmt.Errorf("provider %q on module %q was unset somehow, this is an internal error", providerRegistry[i].typ, m.Name()))
+					}
+				}
+			}
+			if errors != nil {
+				errorCh <- errors
+			}
+			wg.Done()
+		}()
+	}
+	go func() {
+		wg.Wait()
+		close(errorCh)
+	}()
+
+	var errors []error
+	for newErrors := range errorCh {
+		errors = append(errors, newErrors...)
 	}
 	return errors
 }
