@@ -4514,7 +4514,7 @@ func (c *Context) writeAllModuleActions(nw *ninjaWriter, shardNinja bool, ninjaF
 		shardedModules := proptools.ShardByCount(modules, len(fileNames))
 		ninjaShardCnt := len(shardedModules)
 		for i, batchModules := range shardedModules {
-			go func() {
+			go func(i int, batchModules []*moduleInfo) {
 				f, err := os.OpenFile(filepath.Join(c.SrcDir(), fileNames[i]), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, OutFilePermissions)
 				if err != nil {
 					errorCh <- fmt.Errorf("error opening Ninja file: %s", err)
@@ -4525,7 +4525,7 @@ func (c *Context) writeAllModuleActions(nw *ninjaWriter, shardNinja bool, ninjaF
 				defer buf.Flush()
 				writer := newNinjaWriter(buf)
 				errorCh <- c.writeModuleAction(batchModules, writer, headerTemplate)
-			}()
+			}(i, batchModules)
 			nw.Subninja(fileNames[i])
 		}
 
