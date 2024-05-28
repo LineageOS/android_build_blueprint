@@ -18,32 +18,31 @@ import (
 	"cmp"
 	"encoding/binary"
 	"fmt"
-	"hash/maphash"
+	"hash"
+	"hash/fnv"
 	"math"
 	"reflect"
 	"sort"
+	"unsafe"
 )
-
-var seed maphash.Seed = maphash.MakeSeed()
 
 // byte to insert between elements of lists, fields of structs/maps, etc in order
 // to try and make sure the hash is different when values are moved around between
 // elements. 36 is arbitrary, but it's the ascii code for a record separator
 var recordSeparator []byte = []byte{36}
 
-func HashProvider(provider interface{}) (uint64, error) {
-	hasher := maphash.Hash{}
-	hasher.SetSeed(seed)
+func CalculateHash(value interface{}) (uint64, error) {
+	hasher := fnv.New64()
 	ptrs := make(map[uintptr]bool)
-	v := reflect.ValueOf(provider)
+	v := reflect.ValueOf(value)
 	var err error
 	if v.IsValid() {
-		err = hashProviderInternal(&hasher, v, ptrs)
+		err = calculateHashInternal(hasher, v, ptrs)
 	}
 	return hasher.Sum64(), err
 }
 
-func hashProviderInternal(hasher *maphash.Hash, v reflect.Value, ptrs map[uintptr]bool) error {
+func calculateHashInternal(hasher hash.Hash64, v reflect.Value, ptrs map[uintptr]bool) error {
 	var int64Array [8]byte
 	int64Buf := int64Array[:]
 	binary.LittleEndian.PutUint64(int64Buf, uint64(v.Kind()))
@@ -55,7 +54,7 @@ func hashProviderInternal(hasher *maphash.Hash, v reflect.Value, ptrs map[uintpt
 		hasher.Write(int64Buf)
 		for i := 0; i < v.NumField(); i++ {
 			hasher.Write(recordSeparator)
-			err := hashProviderInternal(hasher, v.Field(i), ptrs)
+			err := calculateHashInternal(hasher, v.Field(i), ptrs)
 			if err != nil {
 				return fmt.Errorf("in field %s: %s", v.Type().Field(i).Name, err.Error())
 			}
@@ -77,12 +76,12 @@ func hashProviderInternal(hasher *maphash.Hash, v reflect.Value, ptrs map[uintpt
 		})
 		for i := 0; i < v.Len(); i++ {
 			hasher.Write(recordSeparator)
-			err := hashProviderInternal(hasher, keys[indexes[i]], ptrs)
+			err := calculateHashInternal(hasher, keys[indexes[i]], ptrs)
 			if err != nil {
 				return fmt.Errorf("in map: %s", err.Error())
 			}
 			hasher.Write(recordSeparator)
-			err = hashProviderInternal(hasher, keys[indexes[i]], ptrs)
+			err = calculateHashInternal(hasher, keys[indexes[i]], ptrs)
 			if err != nil {
 				return fmt.Errorf("in map: %s", err.Error())
 			}
@@ -92,7 +91,7 @@ func hashProviderInternal(hasher *maphash.Hash, v reflect.Value, ptrs map[uintpt
 		hasher.Write(int64Buf)
 		for i := 0; i < v.Len(); i++ {
 			hasher.Write(recordSeparator)
-			err := hashProviderInternal(hasher, v.Index(i), ptrs)
+			err := calculateHashInternal(hasher, v.Index(i), ptrs)
 			if err != nil {
 				return fmt.Errorf("in %s at index %d: %s", v.Kind().String(), i, err.Error())
 			}
@@ -103,15 +102,16 @@ func hashProviderInternal(hasher *maphash.Hash, v reflect.Value, ptrs map[uintpt
 			hasher.Write(int64Buf[:1])
 			return nil
 		}
-		addr := v.Pointer()
-		binary.LittleEndian.PutUint64(int64Buf, uint64(addr))
+		// Hardcoded value to indicate it is a pointer
+		binary.LittleEndian.PutUint64(int64Buf, uint64(0x55))
 		hasher.Write(int64Buf)
+		addr := v.Pointer()
 		if _, ok := ptrs[addr]; ok {
 			// We could make this an error if we want to disallow pointer cycles in the future
 			return nil
 		}
 		ptrs[addr] = true
-		err := hashProviderInternal(hasher, v.Elem(), ptrs)
+		err := calculateHashInternal(hasher, v.Elem(), ptrs)
 		if err != nil {
 			return fmt.Errorf("in pointer: %s", err.Error())
 		}
@@ -122,13 +122,20 @@ func hashProviderInternal(hasher *maphash.Hash, v reflect.Value, ptrs map[uintpt
 		} else {
 			// The only way get the pointer out of an interface to hash it or check for cycles
 			// would be InterfaceData(), but that's deprecated and seems like it has undefined behavior.
-			err := hashProviderInternal(hasher, v.Elem(), ptrs)
+			err := calculateHashInternal(hasher, v.Elem(), ptrs)
 			if err != nil {
 				return fmt.Errorf("in interface: %s", err.Error())
 			}
 		}
 	case reflect.String:
-		hasher.WriteString(v.String())
+		strLen := len(v.String())
+		if strLen == 0 {
+			// unsafe.StringData is unspecified in this case
+			int64Buf[0] = 0
+			hasher.Write(int64Buf[:1])
+			return nil
+		}
+		hasher.Write(unsafe.Slice(unsafe.StringData(v.String()), strLen))
 	case reflect.Bool:
 		if v.Bool() {
 			int64Buf[0] = 1
@@ -146,7 +153,7 @@ func hashProviderInternal(hasher *maphash.Hash, v reflect.Value, ptrs map[uintpt
 		binary.LittleEndian.PutUint64(int64Buf, math.Float64bits(v.Float()))
 		hasher.Write(int64Buf)
 	default:
-		return fmt.Errorf("providers may only contain primitives, strings, arrays, slices, structs, maps, and pointers, found: %s", v.Kind().String())
+		return fmt.Errorf("data may only contain primitives, strings, arrays, slices, structs, maps, and pointers, found: %s", v.Kind().String())
 	}
 	return nil
 }
