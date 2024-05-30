@@ -4159,7 +4159,7 @@ func (c *Context) VerifyProvidersWereUnchanged() []error {
 			for m := range toProcess {
 				for i, provider := range m.providers {
 					if provider != nil {
-						hash, err := proptools.HashProvider(provider)
+						hash, err := proptools.CalculateHash(provider)
 						if err != nil {
 							errors = append(errors, fmt.Errorf("provider %q on module %q was modified after being set, and no longer hashable afterwards: %s", providerRegistry[i].typ, m.Name(), err.Error()))
 							continue
