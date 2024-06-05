@@ -196,7 +196,7 @@ func (s *GlobSingleton) GenerateBuildActions(ctx blueprint.SingletonContext) {
 		// We don't need to write the depfile because we're guaranteed that ninja
 		// will run the command at least once (to record it into the ninja_log), so
 		// the depfile will be loaded from that execution.
-		absoluteFileListFile := joinPath(s.SrcDir, fileListFile)
+		absoluteFileListFile := blueprint.JoinPath(s.SrcDir, fileListFile)
 		err := pathtools.WriteFileIfChanged(absoluteFileListFile, globs.FileList(), 0666)
 		if err != nil {
 			panic(fmt.Errorf("error writing %s: %s", fileListFile, err))
@@ -217,7 +217,7 @@ func WriteBuildGlobsNinjaFile(glob *GlobSingleton, config interface{}) error {
 	}
 
 	const outFilePermissions = 0666
-	err := ioutil.WriteFile(joinPath(glob.SrcDir, glob.GlobFile), buffer, outFilePermissions)
+	err := ioutil.WriteFile(blueprint.JoinPath(glob.SrcDir, glob.GlobFile), buffer, outFilePermissions)
 	if err != nil {
 		return fmt.Errorf("error writing %s: %s", glob.GlobFile, err)
 	}
