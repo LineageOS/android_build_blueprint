@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"runtime/pprof"
@@ -64,7 +63,7 @@ func RunBlueprint(args Args, stopBefore StopBefore, ctx *blueprint.Context, conf
 	}
 
 	if args.Cpuprofile != "" {
-		f, err := os.Create(joinPath(ctx.SrcDir(), args.Cpuprofile))
+		f, err := os.Create(blueprint.JoinPath(ctx.SrcDir(), args.Cpuprofile))
 		if err != nil {
 			return nil, fmt.Errorf("error opening cpuprofile: %s", err)
 		}
@@ -74,7 +73,7 @@ func RunBlueprint(args Args, stopBefore StopBefore, ctx *blueprint.Context, conf
 	}
 
 	if args.TraceFile != "" {
-		f, err := os.Create(joinPath(ctx.SrcDir(), args.TraceFile))
+		f, err := os.Create(blueprint.JoinPath(ctx.SrcDir(), args.TraceFile))
 		if err != nil {
 			return nil, fmt.Errorf("error opening trace: %s", err)
 		}
@@ -159,12 +158,12 @@ func RunBlueprint(args Args, stopBefore StopBefore, ctx *blueprint.Context, conf
 	ctx.BeginEvent("write_files")
 	defer ctx.EndEvent("write_files")
 	if args.EmptyNinjaFile {
-		if err := os.WriteFile(joinPath(ctx.SrcDir(), args.OutFile), []byte(nil), blueprint.OutFilePermissions); err != nil {
+		if err := os.WriteFile(blueprint.JoinPath(ctx.SrcDir(), args.OutFile), []byte(nil), blueprint.OutFilePermissions); err != nil {
 			return nil, fmt.Errorf("error writing empty Ninja file: %s", err)
 		}
 		out = io.Discard.(blueprint.StringWriterWriter)
 	} else {
-		f, err := os.OpenFile(joinPath(ctx.SrcDir(), args.OutFile), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, blueprint.OutFilePermissions)
+		f, err := os.OpenFile(blueprint.JoinPath(ctx.SrcDir(), args.OutFile), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, blueprint.OutFilePermissions)
 		if err != nil {
 			return nil, fmt.Errorf("error opening Ninja file: %s", err)
 		}
@@ -195,7 +194,7 @@ func RunBlueprint(args Args, stopBefore StopBefore, ctx *blueprint.Context, conf
 	}
 
 	if args.Memprofile != "" {
-		f, err := os.Create(joinPath(ctx.SrcDir(), args.Memprofile))
+		f, err := os.Create(blueprint.JoinPath(ctx.SrcDir(), args.Memprofile))
 		if err != nil {
 			return nil, fmt.Errorf("error opening memprofile: %s", err)
 		}
@@ -222,11 +221,4 @@ func fatalErrors(errs []error) error {
 	}
 
 	return errors.New("fatal errors encountered")
-}
-
-func joinPath(base, path string) string {
-	if filepath.IsAbs(path) {
-		return path
-	}
-	return filepath.Join(base, path)
 }
