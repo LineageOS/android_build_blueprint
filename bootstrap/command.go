@@ -102,7 +102,6 @@ func RunBlueprint(args Args, stopBefore StopBefore, ctx *blueprint.Context, conf
 	ctx.RegisterBottomUpMutator("bootstrap_plugin_deps", pluginDeps)
 	ctx.RegisterSingletonType("bootstrap", newSingletonFactory(), false)
 	RegisterGoModuleTypes(ctx)
-	blueprint.RegisterPackageIncludesModuleType(ctx)
 
 	ctx.BeginEvent("parse_bp")
 	if blueprintFiles, errs := ctx.ParseFileList(".", filesToParse, config); len(errs) > 0 {
