@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -1089,78 +1088,6 @@ func Test_parallelVisit(t *testing.T) {
 	})
 }
 
-func TestPackageIncludes(t *testing.T) {
-	dir1_foo_bp := `
-	blueprint_package_includes {
-		match_all: ["use_dir1"],
-	}
-	foo_module {
-		name: "foo",
-	}
-	`
-	dir2_foo_bp := `
-	blueprint_package_includes {
-		match_all: ["use_dir2"],
-	}
-	foo_module {
-		name: "foo",
-	}
-	`
-	mockFs := map[string][]byte{
-		"dir1/Android.bp": []byte(dir1_foo_bp),
-		"dir2/Android.bp": []byte(dir2_foo_bp),
-	}
-	testCases := []struct {
-		desc        string
-		includeTags []string
-		expectedDir string
-		expectedErr string
-	}{
-		{
-			desc:        "use_dir1 is set, use dir1 foo",
-			includeTags: []string{"use_dir1"},
-			expectedDir: "dir1",
-		},
-		{
-			desc:        "use_dir2 is set, use dir2 foo",
-			includeTags: []string{"use_dir2"},
-			expectedDir: "dir2",
-		},
-		{
-			desc:        "duplicate module error if both use_dir1 and use_dir2 are set",
-			includeTags: []string{"use_dir1", "use_dir2"},
-			expectedDir: "",
-			expectedErr: `module "foo" already defined`,
-		},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.desc, func(t *testing.T) {
-			ctx := NewContext()
-			// Register mock FS
-			ctx.MockFileSystem(mockFs)
-			// Register module types
-			ctx.RegisterModuleType("foo_module", newFooModule)
-			RegisterPackageIncludesModuleType(ctx)
-			// Add include tags for test case
-			ctx.AddIncludeTags(tc.includeTags...)
-			// Run test
-			_, actualErrs := ctx.ParseFileList(".", []string{"dir1/Android.bp", "dir2/Android.bp"}, nil)
-			// Evaluate
-			if !strings.Contains(fmt.Sprintf("%s", actualErrs), fmt.Sprintf("%s", tc.expectedErr)) {
-				t.Errorf("Expected errors: %s, got errors: %s\n", tc.expectedErr, actualErrs)
-			}
-			if tc.expectedErr != "" {
-				return // expectedDir check not necessary
-			}
-			actualBpFile := ctx.moduleGroupFromName("foo", nil).modules.firstModule().relBlueprintsFile
-			if tc.expectedDir != filepath.Dir(actualBpFile) {
-				t.Errorf("Expected foo from %s, got %s\n", tc.expectedDir, filepath.Dir(actualBpFile))
-			}
-		})
-	}
-
-}
-
 func TestDeduplicateOrderOnlyDeps(t *testing.T) {
 	b := func(output string, inputs []string, orderOnlyDeps []string) *buildDef {
 		return &buildDef{
@@ -1532,7 +1459,6 @@ func TestSourceRootDirs(t *testing.T) {
 			ctx.RegisterModuleType("foo_module", newFooModule)
 			ctx.RegisterBottomUpMutator("deps", depsMutator)
 			ctx.AddSourceRootDirs(tc.sourceRootDirs...)
-			RegisterPackageIncludesModuleType(ctx)
 			ctx.ParseFileList(".", fileList, nil)
 			_, actualErrs := ctx.ResolveDependencies(nil)
 
