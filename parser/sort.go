@@ -282,8 +282,8 @@ func isListOfPrimitives(values []Expression) bool {
 	if len(values) == 0 {
 		return true
 	}
-	switch values[0].Type() {
-	case BoolType, StringType, Int64Type:
+	switch values[0].(type) {
+	case *Bool, *String, *Int64:
 		return true
 	default:
 		return false

@@ -99,7 +99,7 @@ func (p *printer) printAssignment(assignment *Assignment) {
 	p.requestSpace()
 	p.printToken(assignment.Assigner, assignment.EqualsPos)
 	p.requestSpace()
-	p.printExpression(assignment.OrigValue)
+	p.printExpression(assignment.Value)
 	p.requestNewline()
 }
 
@@ -134,7 +134,7 @@ func (p *printer) printExpression(value Expression) {
 	case *Select:
 		p.printSelect(v)
 	default:
-		panic(fmt.Errorf("bad property type: %s", value.Type()))
+		panic(fmt.Errorf("bad property type: %v", value))
 	}
 }
 
@@ -222,7 +222,7 @@ func (p *printer) printSelect(s *Select) {
 		}
 		p.printToken(":", c.ColonPos)
 		p.requestSpace()
-		if unset, ok := c.Value.(UnsetProperty); ok {
+		if unset, ok := c.Value.(*UnsetProperty); ok {
 			p.printToken(unset.String(), unset.Pos())
 		} else {
 			p.printExpression(c.Value)

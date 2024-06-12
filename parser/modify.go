@@ -23,13 +23,11 @@ import (
 
 func AddStringToList(list *List, s string) (modified bool) {
 	for _, v := range list.Values {
-		if v.Type() != StringType {
-			panic(fmt.Errorf("expected string in list, got %s", v.Type()))
-		}
-
 		if sv, ok := v.(*String); ok && sv.Value == s {
 			// string already exists
 			return false
+		} else if !ok {
+			panic(fmt.Errorf("expected string in list, got %s", v.Type()))
 		}
 	}
 
@@ -43,13 +41,11 @@ func AddStringToList(list *List, s string) (modified bool) {
 
 func RemoveStringFromList(list *List, s string) (modified bool) {
 	for i, v := range list.Values {
-		if v.Type() != StringType {
-			panic(fmt.Errorf("expected string in list, got %s", v.Type()))
-		}
-
 		if sv, ok := v.(*String); ok && sv.Value == s {
 			list.Values = append(list.Values[:i], list.Values[i+1:]...)
 			return true
+		} else if !ok {
+			panic(fmt.Errorf("expected string in list, got %s", v.Type()))
 		}
 	}
 
@@ -59,9 +55,6 @@ func RemoveStringFromList(list *List, s string) (modified bool) {
 func ReplaceStringsInList(list *List, replacements map[string]string) (replaced bool) {
 	modified := false
 	for i, v := range list.Values {
-		if v.Type() != StringType {
-			panic(fmt.Errorf("expected string in list, got %s", v.Type()))
-		}
 		if sv, ok := v.(*String); ok && replacements[sv.Value] != "" {
 			pos := list.Values[i].Pos()
 			list.Values[i] = &String{
@@ -69,6 +62,8 @@ func ReplaceStringsInList(list *List, replacements map[string]string) (replaced 
 				Value:      replacements[sv.Value],
 			}
 			modified = true
+		} else if !ok {
+			panic(fmt.Errorf("expected string in list, got %s", v.Type()))
 		}
 	}
 	return modified

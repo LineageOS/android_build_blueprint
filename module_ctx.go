@@ -1392,8 +1392,7 @@ func runAndRemoveLoadHooks(ctx *Context, config interface{}, module *moduleInfo,
 //
 // The filename is only used for reporting errors.
 func CheckBlueprintSyntax(moduleFactories map[string]ModuleFactory, filename string, contents string) []error {
-	scope := parser.NewScope(nil)
-	file, errs := parser.Parse(filename, strings.NewReader(contents), scope)
+	file, errs := parser.Parse(filename, strings.NewReader(contents))
 	if len(errs) != 0 {
 		return errs
 	}

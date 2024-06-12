@@ -744,7 +744,7 @@ func TestPrinter(t *testing.T) {
 			expected := testCase.output[1:]
 
 			r := bytes.NewBufferString(in)
-			file, errs := Parse("", r, NewScope(nil))
+			file, errs := Parse("", r)
 			if len(errs) != 0 {
 				t.Errorf("test case: %s", in)
 				t.Errorf("unexpected errors:")

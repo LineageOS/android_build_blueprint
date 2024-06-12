@@ -20,6 +20,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/google/blueprint/parser"
 )
 
 type appendPropertyTestCase struct {
@@ -1272,7 +1274,10 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 									typ:         configurablePatternTypeString,
 									stringValue: "a",
 								}},
-								value: &[]string{"1", "2"},
+								value: &parser.List{Values: []parser.Expression{
+									&parser.String{Value: "1"},
+									&parser.String{Value: "2"},
+								}},
 							}},
 						},
 					},
@@ -1293,7 +1298,10 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 									typ:         configurablePatternTypeString,
 									stringValue: "b",
 								}},
-								value: &[]string{"3", "4"},
+								value: &parser.List{Values: []parser.Expression{
+									&parser.String{Value: "3"},
+									&parser.String{Value: "4"},
+								}},
 							}},
 						},
 					},
@@ -1315,7 +1323,10 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 									typ:         configurablePatternTypeString,
 									stringValue: "a",
 								}},
-								value: &[]string{"1", "2"},
+								value: &parser.List{Values: []parser.Expression{
+									&parser.String{Value: "1"},
+									&parser.String{Value: "2"},
+								}},
 							}},
 						},
 						next: &configurableInner[[]string]{
@@ -1331,7 +1342,10 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 										typ:         configurablePatternTypeString,
 										stringValue: "b",
 									}},
-									value: &[]string{"3", "4"},
+									value: &parser.List{Values: []parser.Expression{
+										&parser.String{Value: "3"},
+										&parser.String{Value: "4"},
+									}},
 								}},
 							},
 						},
@@ -1358,7 +1372,10 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 									typ:         configurablePatternTypeString,
 									stringValue: "a",
 								}},
-								value: &[]string{"1", "2"},
+								value: &parser.List{Values: []parser.Expression{
+									&parser.String{Value: "1"},
+									&parser.String{Value: "2"},
+								}},
 							}},
 						},
 					},
@@ -1379,7 +1396,10 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 									typ:         configurablePatternTypeString,
 									stringValue: "b",
 								}},
-								value: &[]string{"3", "4"},
+								value: &parser.List{Values: []parser.Expression{
+									&parser.String{Value: "3"},
+									&parser.String{Value: "4"},
+								}},
 							}},
 						},
 					},
@@ -1400,7 +1420,10 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 									typ:         configurablePatternTypeString,
 									stringValue: "b",
 								}},
-								value: &[]string{"3", "4"},
+								value: &parser.List{Values: []parser.Expression{
+									&parser.String{Value: "3"},
+									&parser.String{Value: "4"},
+								}},
 							}},
 						},
 						next: &configurableInner[[]string]{
@@ -1417,7 +1440,10 @@ func appendPropertiesTestCases() []appendPropertyTestCase {
 										typ:         configurablePatternTypeString,
 										stringValue: "a",
 									}},
-									value: &[]string{"1", "2"},
+									value: &parser.List{Values: []parser.Expression{
+										&parser.String{Value: "1"},
+										&parser.String{Value: "2"},
+									}},
 								}},
 							},
 						},
@@ -1907,12 +1933,12 @@ func appendMatchingPropertiesTestCases() []appendMatchingPropertiesTestCase {
 										typ:         configurablePatternTypeString,
 										stringValue: "a",
 									}},
-									value: BoolPtr(true),
+									value: &parser.Bool{Value: true},
 								}, {
 									patterns: []ConfigurablePattern{{
 										typ: configurablePatternTypeDefault,
 									}},
-									value: BoolPtr(false),
+									value: &parser.Bool{Value: false},
 								}},
 							},
 						},
@@ -1939,18 +1965,18 @@ func appendMatchingPropertiesTestCases() []appendMatchingPropertiesTestCase {
 										typ:         configurablePatternTypeString,
 										stringValue: "a",
 									}},
-									value: BoolPtr(true),
+									value: &parser.Bool{Value: true},
 								}, {
 									patterns: []ConfigurablePattern{{
 										typ: configurablePatternTypeDefault,
 									}},
-									value: BoolPtr(false),
+									value: &parser.Bool{Value: false},
 								}},
 							},
 							next: &configurableInner[bool]{
 								single: singleConfigurable[bool]{
 									cases: []ConfigurableCase[bool]{{
-										value: BoolPtr(true),
+										value: &parser.Bool{Value: true},
 									}},
 								},
 							},
@@ -1979,12 +2005,12 @@ func appendMatchingPropertiesTestCases() []appendMatchingPropertiesTestCase {
 										typ:         configurablePatternTypeString,
 										stringValue: "a",
 									}},
-									value: BoolPtr(true),
+									value: &parser.Bool{Value: true},
 								}, {
 									patterns: []ConfigurablePattern{{
 										typ: configurablePatternTypeDefault,
 									}},
-									value: BoolPtr(false),
+									value: &parser.Bool{Value: false},
 								}},
 							},
 						},
@@ -2011,18 +2037,18 @@ func appendMatchingPropertiesTestCases() []appendMatchingPropertiesTestCase {
 										typ:         configurablePatternTypeString,
 										stringValue: "a",
 									}},
-									value: BoolPtr(true),
+									value: &parser.Bool{Value: true},
 								}, {
 									patterns: []ConfigurablePattern{{
 										typ: configurablePatternTypeDefault,
 									}},
-									value: BoolPtr(false),
+									value: &parser.Bool{Value: false},
 								}},
 							},
 							next: &configurableInner[bool]{
 								single: singleConfigurable[bool]{
 									cases: []ConfigurableCase[bool]{{
-										value: BoolPtr(true),
+										value: &parser.Bool{Value: true},
 									}},
 								},
 							},

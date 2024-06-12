@@ -1221,9 +1221,9 @@ func (c *Context) parseOne(rootDir, filename string, reader io.Reader,
 		return nil, nil, []error{err}
 	}
 
-	scope.Remove("subdirs")
-	scope.Remove("optional_subdirs")
-	scope.Remove("build")
+	scope.DontInherit("subdirs")
+	scope.DontInherit("optional_subdirs")
+	scope.DontInherit("build")
 	file, errs = parser.ParseAndEval(filename, reader, scope)
 	if len(errs) > 0 {
 		for i, err := range errs {
@@ -1357,10 +1357,10 @@ func (c *Context) findSubdirBlueprints(dir string, subdirs []string, subdirsPos 
 }
 
 func getLocalStringListFromScope(scope *parser.Scope, v string) ([]string, scanner.Position, error) {
-	if assignment, local := scope.Get(v); assignment == nil || !local {
+	if assignment := scope.GetLocal(v); assignment == nil {
 		return nil, scanner.Position{}, nil
 	} else {
-		switch value := assignment.Value.Eval().(type) {
+		switch value := assignment.Value.(type) {
 		case *parser.List:
 			ret := make([]string, 0, len(value.Values))
 
@@ -1378,24 +1378,6 @@ func getLocalStringListFromScope(scope *parser.Scope, v string) ([]string, scann
 		case *parser.Bool, *parser.String:
 			return nil, scanner.Position{}, &BlueprintError{
 				Err: fmt.Errorf("%q must be a list of strings", v),
-				Pos: assignment.EqualsPos,
-			}
-		default:
-			panic(fmt.Errorf("unknown value type: %d", assignment.Value.Type()))
-		}
-	}
-}
-
-func getStringFromScope(scope *parser.Scope, v string) (string, scanner.Position, error) {
-	if assignment, _ := scope.Get(v); assignment == nil {
-		return "", scanner.Position{}, nil
-	} else {
-		switch value := assignment.Value.Eval().(type) {
-		case *parser.String:
-			return value.Value, assignment.EqualsPos, nil
-		case *parser.Bool, *parser.List:
-			return "", scanner.Position{}, &BlueprintError{
-				Err: fmt.Errorf("%q must be a string", v),
 				Pos: assignment.EqualsPos,
 			}
 		default:

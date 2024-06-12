@@ -565,12 +565,7 @@ var validParseTestCases = []struct {
 					LiteralPos: mkpos(9, 2, 9),
 					Value:      "stuff",
 				},
-				OrigValue: &String{
-					LiteralPos: mkpos(9, 2, 9),
-					Value:      "stuff",
-				},
-				Assigner:   "=",
-				Referenced: true,
+				Assigner: "=",
 			},
 			&Assignment{
 				Name:      "bar",
@@ -579,21 +574,8 @@ var validParseTestCases = []struct {
 				Value: &Variable{
 					Name:    "foo",
 					NamePos: mkpos(25, 3, 9),
-					Value: &String{
-						LiteralPos: mkpos(9, 2, 9),
-						Value:      "stuff",
-					},
 				},
-				OrigValue: &Variable{
-					Name:    "foo",
-					NamePos: mkpos(25, 3, 9),
-					Value: &String{
-						LiteralPos: mkpos(9, 2, 9),
-						Value:      "stuff",
-					},
-				},
-				Assigner:   "=",
-				Referenced: true,
+				Assigner: "=",
 			},
 			&Assignment{
 				Name:      "baz",
@@ -602,155 +584,26 @@ var validParseTestCases = []struct {
 				Value: &Operator{
 					OperatorPos: mkpos(41, 4, 13),
 					Operator:    '+',
-					Value: &String{
-						LiteralPos: mkpos(9, 2, 9),
-						Value:      "stuffstuff",
-					},
 					Args: [2]Expression{
 						&Variable{
 							Name:    "foo",
 							NamePos: mkpos(37, 4, 9),
-							Value: &String{
-								LiteralPos: mkpos(9, 2, 9),
-								Value:      "stuff",
-							},
 						},
 						&Variable{
 							Name:    "bar",
 							NamePos: mkpos(43, 4, 15),
-							Value: &Variable{
-								Name:    "foo",
-								NamePos: mkpos(25, 3, 9),
-								Value: &String{
-									LiteralPos: mkpos(9, 2, 9),
-									Value:      "stuff",
-								},
-							},
 						},
 					},
 				},
-				OrigValue: &Operator{
-					OperatorPos: mkpos(41, 4, 13),
-					Operator:    '+',
-					Value: &String{
-						LiteralPos: mkpos(9, 2, 9),
-						Value:      "stuffstuff",
-					},
-					Args: [2]Expression{
-						&Variable{
-							Name:    "foo",
-							NamePos: mkpos(37, 4, 9),
-							Value: &String{
-								LiteralPos: mkpos(9, 2, 9),
-								Value:      "stuff",
-							},
-						},
-						&Variable{
-							Name:    "bar",
-							NamePos: mkpos(43, 4, 15),
-							Value: &Variable{
-								Name:    "foo",
-								NamePos: mkpos(25, 3, 9),
-								Value: &String{
-									LiteralPos: mkpos(9, 2, 9),
-									Value:      "stuff",
-								},
-							},
-						},
-					},
-				},
-				Assigner:   "=",
-				Referenced: true,
+				Assigner: "=",
 			},
 			&Assignment{
 				Name:      "boo",
 				NamePos:   mkpos(49, 5, 3),
 				EqualsPos: mkpos(53, 5, 7),
-				Value: &Operator{
-					Args: [2]Expression{
-						&Variable{
-							Name:    "baz",
-							NamePos: mkpos(55, 5, 9),
-							Value: &Operator{
-								OperatorPos: mkpos(41, 4, 13),
-								Operator:    '+',
-								Value: &String{
-									LiteralPos: mkpos(9, 2, 9),
-									Value:      "stuffstuff",
-								},
-								Args: [2]Expression{
-									&Variable{
-										Name:    "foo",
-										NamePos: mkpos(37, 4, 9),
-										Value: &String{
-											LiteralPos: mkpos(9, 2, 9),
-											Value:      "stuff",
-										},
-									},
-									&Variable{
-										Name:    "bar",
-										NamePos: mkpos(43, 4, 15),
-										Value: &Variable{
-											Name:    "foo",
-											NamePos: mkpos(25, 3, 9),
-											Value: &String{
-												LiteralPos: mkpos(9, 2, 9),
-												Value:      "stuff",
-											},
-										},
-									},
-								},
-							},
-						},
-						&Variable{
-							Name:    "foo",
-							NamePos: mkpos(68, 6, 10),
-							Value: &String{
-								LiteralPos: mkpos(9, 2, 9),
-								Value:      "stuff",
-							},
-						},
-					},
-					OperatorPos: mkpos(66, 6, 8),
-					Operator:    '+',
-					Value: &String{
-						LiteralPos: mkpos(9, 2, 9),
-						Value:      "stuffstuffstuff",
-					},
-				},
-				OrigValue: &Variable{
+				Value: &Variable{
 					Name:    "baz",
 					NamePos: mkpos(55, 5, 9),
-					Value: &Operator{
-						OperatorPos: mkpos(41, 4, 13),
-						Operator:    '+',
-						Value: &String{
-							LiteralPos: mkpos(9, 2, 9),
-							Value:      "stuffstuff",
-						},
-						Args: [2]Expression{
-							&Variable{
-								Name:    "foo",
-								NamePos: mkpos(37, 4, 9),
-								Value: &String{
-									LiteralPos: mkpos(9, 2, 9),
-									Value:      "stuff",
-								},
-							},
-							&Variable{
-								Name:    "bar",
-								NamePos: mkpos(43, 4, 15),
-								Value: &Variable{
-									Name:    "foo",
-									NamePos: mkpos(25, 3, 9),
-									Value: &String{
-										LiteralPos: mkpos(9, 2, 9),
-										Value:      "stuff",
-									},
-								},
-							},
-						},
-					},
 				},
 				Assigner: "=",
 			},
@@ -761,18 +614,6 @@ var validParseTestCases = []struct {
 				Value: &Variable{
 					Name:    "foo",
 					NamePos: mkpos(68, 6, 10),
-					Value: &String{
-						LiteralPos: mkpos(9, 2, 9),
-						Value:      "stuff",
-					},
-				},
-				OrigValue: &Variable{
-					Name:    "foo",
-					NamePos: mkpos(68, 6, 10),
-					Value: &String{
-						LiteralPos: mkpos(9, 2, 9),
-						Value:      "stuff",
-					},
 				},
 				Assigner: "+=",
 			},
@@ -791,10 +632,6 @@ var validParseTestCases = []struct {
 				Value: &Operator{
 					OperatorPos: mkpos(12, 2, 12),
 					Operator:    '+',
-					Value: &Int64{
-						LiteralPos: mkpos(9, 2, 9),
-						Value:      -3,
-					},
 					Args: [2]Expression{
 						&Int64{
 							LiteralPos: mkpos(9, 2, 9),
@@ -804,10 +641,6 @@ var validParseTestCases = []struct {
 						&Operator{
 							OperatorPos: mkpos(17, 2, 17),
 							Operator:    '+',
-							Value: &Int64{
-								LiteralPos: mkpos(14, 2, 14),
-								Value:      1,
-							},
 							Args: [2]Expression{
 								&Int64{
 									LiteralPos: mkpos(14, 2, 14),
@@ -823,43 +656,7 @@ var validParseTestCases = []struct {
 						},
 					},
 				},
-				OrigValue: &Operator{
-					OperatorPos: mkpos(12, 2, 12),
-					Operator:    '+',
-					Value: &Int64{
-						LiteralPos: mkpos(9, 2, 9),
-						Value:      -3,
-					},
-					Args: [2]Expression{
-						&Int64{
-							LiteralPos: mkpos(9, 2, 9),
-							Value:      -4,
-							Token:      "-4",
-						},
-						&Operator{
-							OperatorPos: mkpos(17, 2, 17),
-							Operator:    '+',
-							Value: &Int64{
-								LiteralPos: mkpos(14, 2, 14),
-								Value:      1,
-							},
-							Args: [2]Expression{
-								&Int64{
-									LiteralPos: mkpos(14, 2, 14),
-									Value:      -5,
-									Token:      "-5",
-								},
-								&Int64{
-									LiteralPos: mkpos(19, 2, 19),
-									Value:      6,
-									Token:      "6",
-								},
-							},
-						},
-					},
-				},
-				Assigner:   "=",
-				Referenced: false,
+				Assigner: "=",
 			},
 		},
 		nil,
@@ -882,13 +679,7 @@ var validParseTestCases = []struct {
 					Value:      1000000,
 					Token:      "1000000",
 				},
-				OrigValue: &Int64{
-					LiteralPos: mkpos(9, 2, 9),
-					Value:      1000000,
-					Token:      "1000000",
-				},
-				Assigner:   "=",
-				Referenced: true,
+				Assigner: "=",
 			},
 			&Assignment{
 				Name:      "bar",
@@ -897,23 +688,8 @@ var validParseTestCases = []struct {
 				Value: &Variable{
 					Name:    "foo",
 					NamePos: mkpos(25, 3, 9),
-					Value: &Int64{
-						LiteralPos: mkpos(9, 2, 9),
-						Value:      1000000,
-						Token:      "1000000",
-					},
 				},
-				OrigValue: &Variable{
-					Name:    "foo",
-					NamePos: mkpos(25, 3, 9),
-					Value: &Int64{
-						LiteralPos: mkpos(9, 2, 9),
-						Value:      1000000,
-						Token:      "1000000",
-					},
-				},
-				Assigner:   "=",
-				Referenced: true,
+				Assigner: "=",
 			},
 			&Assignment{
 				Name:      "baz",
@@ -922,164 +698,26 @@ var validParseTestCases = []struct {
 				Value: &Operator{
 					OperatorPos: mkpos(41, 4, 13),
 					Operator:    '+',
-					Value: &Int64{
-						LiteralPos: mkpos(9, 2, 9),
-						Value:      2000000,
-					},
 					Args: [2]Expression{
 						&Variable{
 							Name:    "foo",
 							NamePos: mkpos(37, 4, 9),
-							Value: &Int64{
-								LiteralPos: mkpos(9, 2, 9),
-								Value:      1000000,
-								Token:      "1000000",
-							},
 						},
 						&Variable{
 							Name:    "bar",
 							NamePos: mkpos(43, 4, 15),
-							Value: &Variable{
-								Name:    "foo",
-								NamePos: mkpos(25, 3, 9),
-								Value: &Int64{
-									LiteralPos: mkpos(9, 2, 9),
-									Value:      1000000,
-									Token:      "1000000",
-								},
-							},
 						},
 					},
 				},
-				OrigValue: &Operator{
-					OperatorPos: mkpos(41, 4, 13),
-					Operator:    '+',
-					Value: &Int64{
-						LiteralPos: mkpos(9, 2, 9),
-						Value:      2000000,
-					},
-					Args: [2]Expression{
-						&Variable{
-							Name:    "foo",
-							NamePos: mkpos(37, 4, 9),
-							Value: &Int64{
-								LiteralPos: mkpos(9, 2, 9),
-								Value:      1000000,
-								Token:      "1000000",
-							},
-						},
-						&Variable{
-							Name:    "bar",
-							NamePos: mkpos(43, 4, 15),
-							Value: &Variable{
-								Name:    "foo",
-								NamePos: mkpos(25, 3, 9),
-								Value: &Int64{
-									LiteralPos: mkpos(9, 2, 9),
-									Value:      1000000,
-									Token:      "1000000",
-								},
-							},
-						},
-					},
-				},
-				Assigner:   "=",
-				Referenced: true,
+				Assigner: "=",
 			},
 			&Assignment{
 				Name:      "boo",
 				NamePos:   mkpos(49, 5, 3),
 				EqualsPos: mkpos(53, 5, 7),
-				Value: &Operator{
-					Args: [2]Expression{
-						&Variable{
-							Name:    "baz",
-							NamePos: mkpos(55, 5, 9),
-							Value: &Operator{
-								OperatorPos: mkpos(41, 4, 13),
-								Operator:    '+',
-								Value: &Int64{
-									LiteralPos: mkpos(9, 2, 9),
-									Value:      2000000,
-								},
-								Args: [2]Expression{
-									&Variable{
-										Name:    "foo",
-										NamePos: mkpos(37, 4, 9),
-										Value: &Int64{
-											LiteralPos: mkpos(9, 2, 9),
-											Value:      1000000,
-											Token:      "1000000",
-										},
-									},
-									&Variable{
-										Name:    "bar",
-										NamePos: mkpos(43, 4, 15),
-										Value: &Variable{
-											Name:    "foo",
-											NamePos: mkpos(25, 3, 9),
-											Value: &Int64{
-												LiteralPos: mkpos(9, 2, 9),
-												Value:      1000000,
-												Token:      "1000000",
-											},
-										},
-									},
-								},
-							},
-						},
-						&Variable{
-							Name:    "foo",
-							NamePos: mkpos(68, 6, 10),
-							Value: &Int64{
-								LiteralPos: mkpos(9, 2, 9),
-								Value:      1000000,
-								Token:      "1000000",
-							},
-						},
-					},
-					OperatorPos: mkpos(66, 6, 8),
-					Operator:    '+',
-					Value: &Int64{
-						LiteralPos: mkpos(9, 2, 9),
-						Value:      3000000,
-					},
-				},
-				OrigValue: &Variable{
+				Value: &Variable{
 					Name:    "baz",
 					NamePos: mkpos(55, 5, 9),
-					Value: &Operator{
-						OperatorPos: mkpos(41, 4, 13),
-						Operator:    '+',
-						Value: &Int64{
-							LiteralPos: mkpos(9, 2, 9),
-							Value:      2000000,
-						},
-						Args: [2]Expression{
-							&Variable{
-								Name:    "foo",
-								NamePos: mkpos(37, 4, 9),
-								Value: &Int64{
-									LiteralPos: mkpos(9, 2, 9),
-									Value:      1000000,
-									Token:      "1000000",
-								},
-							},
-							&Variable{
-								Name:    "bar",
-								NamePos: mkpos(43, 4, 15),
-								Value: &Variable{
-									Name:    "foo",
-									NamePos: mkpos(25, 3, 9),
-									Value: &Int64{
-										LiteralPos: mkpos(9, 2, 9),
-										Value:      1000000,
-										Token:      "1000000",
-									},
-								},
-							},
-						},
-					},
 				},
 				Assigner: "=",
 			},
@@ -1090,20 +728,6 @@ var validParseTestCases = []struct {
 				Value: &Variable{
 					Name:    "foo",
 					NamePos: mkpos(68, 6, 10),
-					Value: &Int64{
-						LiteralPos: mkpos(9, 2, 9),
-						Value:      1000000,
-						Token:      "1000000",
-					},
-				},
-				OrigValue: &Variable{
-					Name:    "foo",
-					NamePos: mkpos(68, 6, 10),
-					Value: &Int64{
-						LiteralPos: mkpos(9, 2, 9),
-						Value:      1000000,
-						Token:      "1000000",
-					},
 				},
 				Assigner: "+=",
 			},
@@ -1171,7 +795,7 @@ func TestParseValidInput(t *testing.T) {
 	for i, testCase := range validParseTestCases {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			r := bytes.NewBufferString(testCase.input)
-			file, errs := ParseAndEval("", r, NewScope(nil))
+			file, errs := Parse("", r)
 			if len(errs) != 0 {
 				t.Errorf("test case: %s", testCase.input)
 				t.Errorf("unexpected errors:")
@@ -1284,7 +908,7 @@ func TestParserEndPos(t *testing.T) {
 
 	r := bytes.NewBufferString(in)
 
-	file, errs := ParseAndEval("", r, NewScope(nil))
+	file, errs := Parse("", r)
 	if len(errs) != 0 {
 		t.Errorf("unexpected errors:")
 		for _, err := range errs {
@@ -1318,9 +942,8 @@ func TestParserEndPos(t *testing.T) {
 
 func TestParserNotEvaluated(t *testing.T) {
 	// When parsing without evaluation, create variables correctly
-	scope := NewScope(nil)
 	input := "FOO=abc\n"
-	_, errs := Parse("", bytes.NewBufferString(input), scope)
+	file, errs := Parse("", bytes.NewBufferString(input))
 	if errs != nil {
 		t.Errorf("unexpected errors:")
 		for _, err := range errs {
@@ -1328,11 +951,11 @@ func TestParserNotEvaluated(t *testing.T) {
 		}
 		t.FailNow()
 	}
-	assignment, found := scope.Get("FOO")
-	if !found {
+	assignment, ok := file.Defs[0].(*Assignment)
+	if !ok || assignment.Name != "FOO" {
 		t.Fatalf("Expected to find FOO after parsing %s", input)
 	}
-	if s := assignment.String(); strings.Contains(s, "PANIC") {
-		t.Errorf("Attempt to print FOO returned %s", s)
+	if assignment.Value.String() != "abc" {
+		t.Errorf("Attempt to print FOO returned %s", assignment.Value.String())
 	}
 }

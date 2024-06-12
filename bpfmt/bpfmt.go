@@ -66,7 +66,7 @@ func processReader(filename string, in io.Reader, out io.Writer) error {
 
 	r := bytes.NewBuffer(src)
 
-	file, errs := parser.Parse(filename, r, parser.NewScope(nil))
+	file, errs := parser.Parse(filename, r)
 	if len(errs) > 0 {
 		for _, err := range errs {
 			fmt.Fprintln(os.Stderr, err)

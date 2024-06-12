@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"reflect"
 	"testing"
+	"text/scanner"
 
 	"github.com/google/blueprint/parser"
 )
@@ -737,7 +738,14 @@ var validUnpackTestCases = []struct {
 					inner: &configurableInner[string]{
 						single: singleConfigurable[string]{
 							cases: []ConfigurableCase[string]{{
-								value: StringPtr("bar"),
+								value: &parser.String{
+									LiteralPos: scanner.Position{
+										Offset: 17,
+										Line:   3,
+										Column: 10,
+									},
+									Value: "bar",
+								},
 							}},
 						},
 					},
@@ -761,7 +769,15 @@ var validUnpackTestCases = []struct {
 					inner: &configurableInner[bool]{
 						single: singleConfigurable[bool]{
 							cases: []ConfigurableCase[bool]{{
-								value: BoolPtr(true),
+								value: &parser.Bool{
+									LiteralPos: scanner.Position{
+										Offset: 17,
+										Line:   3,
+										Column: 10,
+									},
+									Value: true,
+									Token: "true",
+								},
 							}},
 						},
 					},
@@ -785,7 +801,36 @@ var validUnpackTestCases = []struct {
 					inner: &configurableInner[[]string]{
 						single: singleConfigurable[[]string]{
 							cases: []ConfigurableCase[[]string]{{
-								value: &[]string{"a", "b"},
+								value: &parser.List{
+									LBracePos: scanner.Position{
+										Offset: 17,
+										Line:   3,
+										Column: 10,
+									},
+									RBracePos: scanner.Position{
+										Offset: 26,
+										Line:   3,
+										Column: 19,
+									},
+									Values: []parser.Expression{
+										&parser.String{
+											LiteralPos: scanner.Position{
+												Offset: 18,
+												Line:   3,
+												Column: 11,
+											},
+											Value: "a",
+										},
+										&parser.String{
+											LiteralPos: scanner.Position{
+												Offset: 23,
+												Line:   3,
+												Column: 16,
+											},
+											Value: "b",
+										},
+									},
+								},
 							}},
 						},
 					},
@@ -812,6 +857,7 @@ var validUnpackTestCases = []struct {
 					propertyName: "foo",
 					inner: &configurableInner[string]{
 						single: singleConfigurable[string]{
+							scope: parser.NewScope(nil),
 							conditions: []ConfigurableCondition{{
 								functionName: "soong_config_variable",
 								args: []string{
@@ -825,20 +871,41 @@ var validUnpackTestCases = []struct {
 										typ:         configurablePatternTypeString,
 										stringValue: "a",
 									}},
-									value: StringPtr("a2"),
+									value: &parser.String{
+										LiteralPos: scanner.Position{
+											Offset: 90,
+											Line:   4,
+											Column: 11,
+										},
+										Value: "a2",
+									},
 								},
 								{
 									patterns: []ConfigurablePattern{{
 										typ:         configurablePatternTypeString,
 										stringValue: "b",
 									}},
-									value: StringPtr("b2"),
+									value: &parser.String{
+										LiteralPos: scanner.Position{
+											Offset: 106,
+											Line:   5,
+											Column: 11,
+										},
+										Value: "b2",
+									},
 								},
 								{
 									patterns: []ConfigurablePattern{{
 										typ: configurablePatternTypeDefault,
 									}},
-									value: StringPtr("c2"),
+									value: &parser.String{
+										LiteralPos: scanner.Position{
+											Offset: 126,
+											Line:   6,
+											Column: 15,
+										},
+										Value: "c2",
+									},
 								},
 							},
 						},
@@ -870,6 +937,7 @@ var validUnpackTestCases = []struct {
 					propertyName: "foo",
 					inner: &configurableInner[string]{
 						single: singleConfigurable[string]{
+							scope: parser.NewScope(nil),
 							conditions: []ConfigurableCondition{{
 								functionName: "soong_config_variable",
 								args: []string{
@@ -883,25 +951,47 @@ var validUnpackTestCases = []struct {
 										typ:         configurablePatternTypeString,
 										stringValue: "a",
 									}},
-									value: StringPtr("a2"),
+									value: &parser.String{
+										LiteralPos: scanner.Position{
+											Offset: 90,
+											Line:   4,
+											Column: 11,
+										},
+										Value: "a2",
+									},
 								},
 								{
 									patterns: []ConfigurablePattern{{
 										typ:         configurablePatternTypeString,
 										stringValue: "b",
 									}},
-									value: StringPtr("b2"),
+									value: &parser.String{
+										LiteralPos: scanner.Position{
+											Offset: 106,
+											Line:   5,
+											Column: 11,
+										},
+										Value: "b2",
+									},
 								},
 								{
 									patterns: []ConfigurablePattern{{
 										typ: configurablePatternTypeDefault,
 									}},
-									value: StringPtr("c2"),
+									value: &parser.String{
+										LiteralPos: scanner.Position{
+											Offset: 126,
+											Line:   6,
+											Column: 15,
+										},
+										Value: "c2",
+									},
 								},
 							},
 						},
 						next: &configurableInner[string]{
 							single: singleConfigurable[string]{
+								scope: parser.NewScope(nil),
 								conditions: []ConfigurableCondition{{
 									functionName: "soong_config_variable",
 									args: []string{
@@ -915,20 +1005,41 @@ var validUnpackTestCases = []struct {
 											typ:         configurablePatternTypeString,
 											stringValue: "d",
 										}},
-										value: StringPtr("d2"),
+										value: &parser.String{
+											LiteralPos: scanner.Position{
+												Offset: 218,
+												Line:   8,
+												Column: 11,
+											},
+											Value: "d2",
+										},
 									},
 									{
 										patterns: []ConfigurablePattern{{
 											typ:         configurablePatternTypeString,
 											stringValue: "e",
 										}},
-										value: StringPtr("e2"),
+										value: &parser.String{
+											LiteralPos: scanner.Position{
+												Offset: 234,
+												Line:   9,
+												Column: 11,
+											},
+											Value: "e2",
+										},
 									},
 									{
 										patterns: []ConfigurablePattern{{
 											typ: configurablePatternTypeDefault,
 										}},
-										value: StringPtr("f2"),
+										value: &parser.String{
+											LiteralPos: scanner.Position{
+												Offset: 254,
+												Line:   10,
+												Column: 15,
+											},
+											Value: "f2",
+										},
 									},
 								},
 							},
@@ -958,7 +1069,14 @@ var validUnpackTestCases = []struct {
 					inner: &configurableInner[string]{
 						single: singleConfigurable[string]{
 							cases: []ConfigurableCase[string]{{
-								value: StringPtr("asdf"),
+								value: &parser.String{
+									LiteralPos: scanner.Position{
+										Offset: 25,
+										Line:   2,
+										Column: 25,
+									},
+									Value: "asdf",
+								},
 							}},
 						},
 					},
@@ -968,7 +1086,15 @@ var validUnpackTestCases = []struct {
 					inner: &configurableInner[bool]{
 						single: singleConfigurable[bool]{
 							cases: []ConfigurableCase[bool]{{
-								value: BoolPtr(true),
+								value: &parser.Bool{
+									LiteralPos: scanner.Position{
+										Offset: 54,
+										Line:   3,
+										Column: 23,
+									},
+									Value: true,
+									Token: "true",
+								},
 							}},
 						},
 					},

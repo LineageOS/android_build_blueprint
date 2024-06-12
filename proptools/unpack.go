@@ -158,7 +158,7 @@ func (ctx *unpackContext) buildPropertyMap(prefix string, properties []*parser.P
 		}
 
 		ctx.propertyMap[name] = &packedProperty{property, false}
-		switch propValue := property.Value.Eval().(type) {
+		switch propValue := property.Value.(type) {
 		case *parser.Map:
 			ctx.buildPropertyMap(name, propValue.Properties)
 		case *parser.List:
@@ -313,7 +313,7 @@ func (ctx *unpackContext) unpackToStruct(namePrefix string, structValue reflect.
 				return
 			}
 		} else if isStruct(fieldValue.Type()) {
-			if property.Value.Eval().Type() != parser.MapType {
+			if property.Value.Type() != parser.MapType {
 				ctx.addError(&UnpackError{
 					fmt.Errorf("can't assign %s value to map property %q",
 						property.Value.Type(), property.Name),
@@ -359,7 +359,7 @@ func (ctx *unpackContext) unpackToConfigurable(propertyName string, property *pa
 			inner: &configurableInner[string]{
 				single: singleConfigurable[string]{
 					cases: []ConfigurableCase[string]{{
-						value: &v.Value,
+						value: v,
 					}},
 				},
 			},
@@ -379,7 +379,7 @@ func (ctx *unpackContext) unpackToConfigurable(propertyName string, property *pa
 			inner: &configurableInner[bool]{
 				single: singleConfigurable[bool]{
 					cases: []ConfigurableCase[bool]{{
-						value: &v.Value,
+						value: v,
 					}},
 				},
 			},
@@ -416,7 +416,7 @@ func (ctx *unpackContext) unpackToConfigurable(propertyName string, property *pa
 				inner: &configurableInner[[]string]{
 					single: singleConfigurable[[]string]{
 						cases: []ConfigurableCase[[]string]{{
-							value: &value,
+							value: v,
 						}},
 					},
 				},
@@ -425,12 +425,6 @@ func (ctx *unpackContext) unpackToConfigurable(propertyName string, property *pa
 		default:
 			panic("This should be unreachable because ConfigurableElements only accepts slices of strings")
 		}
-	case *parser.Operator:
-		property.Value = v.Value.Eval()
-		return ctx.unpackToConfigurable(propertyName, property, configurableType, configuredType)
-	case *parser.Variable:
-		property.Value = v.Value.Eval()
-		return ctx.unpackToConfigurable(propertyName, property, configurableType, configuredType)
 	case *parser.Select:
 		resultPtr := reflect.New(configurableType)
 		result := resultPtr.Elem()
@@ -448,13 +442,7 @@ func (ctx *unpackContext) unpackToConfigurable(propertyName string, property *pa
 
 		configurableCaseType := configurableCaseType(configuredType)
 		cases := reflect.MakeSlice(reflect.SliceOf(configurableCaseType), 0, len(v.Cases))
-		for i, c := range v.Cases {
-			p := &parser.Property{
-				Name:    property.Name + "[" + strconv.Itoa(i) + "]",
-				NamePos: c.ColonPos,
-				Value:   c.Value,
-			}
-
+		for _, c := range v.Cases {
 			patterns := make([]ConfigurablePattern, len(c.Patterns))
 			for i, pat := range c.Patterns {
 				switch pat := pat.(type) {
@@ -473,40 +461,12 @@ func (ctx *unpackContext) unpackToConfigurable(propertyName string, property *pa
 				}
 			}
 
-			var value reflect.Value
-			// Map the "unset" keyword to a nil pointer in the cases map
-			if _, ok := c.Value.(parser.UnsetProperty); ok {
-				value = reflect.Zero(reflect.PointerTo(configuredType))
-			} else {
-				var err error
-				switch configuredType.Kind() {
-				case reflect.String, reflect.Bool:
-					value, err = propertyToValue(reflect.PointerTo(configuredType), p)
-					if err != nil {
-						ctx.addError(&UnpackError{
-							err,
-							c.Value.Pos(),
-						})
-						return reflect.New(configurableType), false
-					}
-				case reflect.Slice:
-					if configuredType.Elem().Kind() != reflect.String {
-						panic("This should be unreachable because ConfigurableElements only accepts slices of strings")
-					}
-					value, ok = ctx.unpackToSlice(p.Name, p, reflect.PointerTo(configuredType))
-					if !ok {
-						return reflect.New(configurableType), false
-					}
-				default:
-					panic("This should be unreachable because ConfigurableElements only accepts strings, boools, or slices of strings")
-				}
-			}
-
 			case_ := reflect.New(configurableCaseType)
-			case_.Interface().(configurableCaseReflection).initialize(patterns, value.Interface())
+			case_.Interface().(configurableCaseReflection).initialize(patterns, c.Value)
 			cases = reflect.Append(cases, case_.Elem())
 		}
 		resultPtr.Interface().(configurablePtrReflection).initialize(
+			v.Scope,
 			property.Name,
 			conditions,
 			cases.Interface(),
@@ -537,7 +497,7 @@ func (ctx *unpackContext) unpackToConfigurable(propertyName string, property *pa
 // If the given property is a select, returns an error saying that you can't assign a select to
 // a non-configurable property. Otherwise returns nil.
 func selectOnNonConfigurablePropertyError(property *parser.Property) error {
-	if _, ok := property.Value.Eval().(*parser.Select); !ok {
+	if _, ok := property.Value.(*parser.Select); !ok {
 		return nil
 	}
 
@@ -570,7 +530,7 @@ func (ctx *unpackContext) unpackToSlice(
 // does.
 func (ctx *unpackContext) unpackToSliceInner(
 	sliceName string, property *parser.Property, sliceType reflect.Type) (reflect.Value, bool) {
-	propValueAsList, ok := property.Value.Eval().(*parser.List)
+	propValueAsList, ok := property.Value.(*parser.List)
 	if !ok {
 		if err := selectOnNonConfigurablePropertyError(property); err != nil {
 			ctx.addError(err)
@@ -590,33 +550,24 @@ func (ctx *unpackContext) unpackToSliceInner(
 	}
 
 	// The function to construct an item value depends on the type of list elements.
-	var getItemFunc func(*parser.Property, reflect.Type) (reflect.Value, bool)
-	switch exprs[0].Type() {
-	case parser.BoolType, parser.StringType, parser.Int64Type:
-		getItemFunc = func(property *parser.Property, t reflect.Type) (reflect.Value, bool) {
+	getItemFunc := func(property *parser.Property, t reflect.Type) (reflect.Value, bool) {
+		switch property.Value.(type) {
+		case *parser.Bool, *parser.String, *parser.Int64:
 			value, err := propertyToValue(t, property)
 			if err != nil {
 				ctx.addError(err)
 				return value, false
 			}
 			return value, true
-		}
-	case parser.ListType:
-		getItemFunc = func(property *parser.Property, t reflect.Type) (reflect.Value, bool) {
+		case *parser.List:
 			return ctx.unpackToSlice(property.Name, property, t)
-		}
-	case parser.MapType:
-		getItemFunc = func(property *parser.Property, t reflect.Type) (reflect.Value, bool) {
+		case *parser.Map:
 			itemValue := reflect.New(t).Elem()
 			ctx.unpackToStruct(property.Name, itemValue)
 			return itemValue, true
+		default:
+			panic(fmt.Errorf("bizarre property expression type: %v, %#v", property.Value.Type(), property.Value))
 		}
-	case parser.NotEvaluatedType:
-		getItemFunc = func(property *parser.Property, t reflect.Type) (reflect.Value, bool) {
-			return reflect.New(t), false
-		}
-	default:
-		panic(fmt.Errorf("bizarre property expression type: %v", exprs[0].Type()))
 	}
 
 	itemProperty := &parser.Property{NamePos: property.NamePos, ColonPos: property.ColonPos}
@@ -657,7 +608,7 @@ func propertyToValue(typ reflect.Type, property *parser.Property) (reflect.Value
 
 	switch kind := baseType.Kind(); kind {
 	case reflect.Bool:
-		b, ok := property.Value.Eval().(*parser.Bool)
+		b, ok := property.Value.(*parser.Bool)
 		if !ok {
 			if err := selectOnNonConfigurablePropertyError(property); err != nil {
 				return value, err
@@ -672,7 +623,7 @@ func propertyToValue(typ reflect.Type, property *parser.Property) (reflect.Value
 		value = reflect.ValueOf(b.Value)
 
 	case reflect.Int64:
-		b, ok := property.Value.Eval().(*parser.Int64)
+		b, ok := property.Value.(*parser.Int64)
 		if !ok {
 			return value, &UnpackError{
 				fmt.Errorf("can't assign %s value to int64 property %q",
@@ -683,7 +634,7 @@ func propertyToValue(typ reflect.Type, property *parser.Property) (reflect.Value
 		value = reflect.ValueOf(b.Value)
 
 	case reflect.String:
-		s, ok := property.Value.Eval().(*parser.String)
+		s, ok := property.Value.(*parser.String)
 		if !ok {
 			if err := selectOnNonConfigurablePropertyError(property); err != nil {
 				return value, err

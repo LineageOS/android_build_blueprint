@@ -16,6 +16,7 @@ package parser
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"text/scanner"
 )
@@ -40,14 +41,13 @@ type Assignment struct {
 	Name       string
 	NamePos    scanner.Position
 	Value      Expression
-	OrigValue  Expression
 	EqualsPos  scanner.Position
 	Assigner   string
 	Referenced bool
 }
 
 func (a *Assignment) String() string {
-	return fmt.Sprintf("%s@%s %s %s (%s) %t", a.Name, a.EqualsPos, a.Assigner, a.Value, a.OrigValue, a.Referenced)
+	return fmt.Sprintf("%s@%s %s %s %t", a.Name, a.EqualsPos, a.Assigner, a.Value, a.Referenced)
 }
 
 func (a *Assignment) Pos() scanner.Position { return a.NamePos }
@@ -139,11 +139,19 @@ type Expression interface {
 	// Copy returns a copy of the Expression that will not affect the original if mutated
 	Copy() Expression
 	String() string
-	// Type returns the underlying Type enum of the Expression if it were to be evaluated
+	// Type returns the underlying Type enum of the Expression if it were to be evaluated, if it's known.
+	// It's possible that the type isn't known, such as when a select statement with a late-bound variable
+	// is used. For that reason, Type() is mostly for use in error messages, not to make logic decisions
+	// off of.
 	Type() Type
-	// Eval returns an expression that is fully evaluated to a simple type (List, Map, String, or
-	// Bool).  It will return the same object for every call to Eval().
-	Eval() Expression
+	// Eval returns an expression that is fully evaluated to a simple type (List, Map, String,
+	// Bool, or Select).  It will return the origional expression if possible, or allocate a
+	// new one if modifications were necessary.
+	Eval(scope *Scope) (Expression, error)
+	// PrintfInto will substitute any %s's in string literals in the AST with the provided
+	// value. It will modify the AST in-place. This is used to implement soong config value
+	// variables, but should be removed when those have switched to selects.
+	PrintfInto(value string) error
 }
 
 // ExpressionsAreSame tells whether the two values are the same Expression.
@@ -157,9 +165,6 @@ func ExpressionsAreSame(a Expression, b Expression) (equal bool, err error) {
 // TODO(jeffrygaston) once positions are removed from Expression structs,
 // remove this function and have callers use reflect.DeepEqual(a, b)
 func hackyExpressionsAreSame(a Expression, b Expression) (equal bool, err error) {
-	if a.Type() != b.Type() {
-		return false, nil
-	}
 	left, err := hackyFingerprint(a)
 	if err != nil {
 		return false, nil
@@ -173,7 +178,7 @@ func hackyExpressionsAreSame(a Expression, b Expression) (equal bool, err error)
 }
 
 func hackyFingerprint(expression Expression) (fingerprint []byte, err error) {
-	assignment := &Assignment{"a", noPos, expression, expression, noPos, "=", false}
+	assignment := &Assignment{"a", noPos, expression, noPos, "=", false}
 	module := &File{}
 	module.Defs = append(module.Defs, assignment)
 	p := newPrinter(module)
@@ -183,17 +188,19 @@ func hackyFingerprint(expression Expression) (fingerprint []byte, err error) {
 type Type int
 
 const (
-	BoolType Type = iota + 1
+	UnknownType Type = iota
+	BoolType
 	StringType
 	Int64Type
 	ListType
 	MapType
-	NotEvaluatedType
 	UnsetType
 )
 
 func (t Type) String() string {
 	switch t {
+	case UnknownType:
+		return "unknown"
 	case BoolType:
 		return "bool"
 	case StringType:
@@ -204,12 +211,10 @@ func (t Type) String() string {
 		return "list"
 	case MapType:
 		return "map"
-	case NotEvaluatedType:
-		return "notevaluated"
 	case UnsetType:
 		return "unset"
 	default:
-		panic(fmt.Errorf("Unknown type %d", t))
+		panic(fmt.Sprintf("Unknown type %d", t))
 	}
 }
 
@@ -217,7 +222,6 @@ type Operator struct {
 	Args        [2]Expression
 	Operator    rune
 	OperatorPos scanner.Position
-	Value       Expression
 }
 
 func (x *Operator) Copy() Expression {
@@ -227,26 +231,137 @@ func (x *Operator) Copy() Expression {
 	return &ret
 }
 
-func (x *Operator) Eval() Expression {
-	return x.Value.Eval()
+func (x *Operator) Type() Type {
+	t1 := x.Args[0].Type()
+	t2 := x.Args[1].Type()
+	if t1 == UnknownType {
+		return t2
+	}
+	if t2 == UnknownType {
+		return t1
+	}
+	if t1 != t2 {
+		return UnknownType
+	}
+	return t1
 }
 
-func (x *Operator) Type() Type {
-	return x.Args[0].Type()
+func (x *Operator) Eval(scope *Scope) (Expression, error) {
+	return evaluateOperator(scope, x.Operator, x.Args[0], x.Args[1])
+}
+
+func evaluateOperator(scope *Scope, operator rune, left, right Expression) (Expression, error) {
+	if operator != '+' {
+		return nil, fmt.Errorf("unknown operator %c", operator)
+	}
+	l, err := left.Eval(scope)
+	if err != nil {
+		return nil, err
+	}
+	r, err := right.Eval(scope)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, ok := l.(*Select); !ok {
+		if _, ok := r.(*Select); ok {
+			// Promote l to a select so we can add r to it
+			l = &Select{
+				Cases: []*SelectCase{{
+					Value: l,
+				}},
+			}
+		}
+	}
+
+	l = l.Copy()
+
+	switch v := l.(type) {
+	case *String:
+		if _, ok := r.(*String); !ok {
+			fmt.Fprintf(os.Stderr, "not ok")
+		}
+		v.Value += r.(*String).Value
+	case *Int64:
+		v.Value += r.(*Int64).Value
+		v.Token = ""
+	case *List:
+		v.Values = append(v.Values, r.(*List).Values...)
+	case *Map:
+		var err error
+		v.Properties, err = addMaps(scope, v.Properties, r.(*Map).Properties)
+		if err != nil {
+			return nil, err
+		}
+	case *Select:
+		v.Append = r
+	default:
+		return nil, fmt.Errorf("operator %c not supported on %v", operator, v)
+	}
+
+	return l, nil
+}
+
+func addMaps(scope *Scope, map1, map2 []*Property) ([]*Property, error) {
+	ret := make([]*Property, 0, len(map1))
+
+	inMap1 := make(map[string]*Property)
+	inMap2 := make(map[string]*Property)
+	inBoth := make(map[string]*Property)
+
+	for _, prop1 := range map1 {
+		inMap1[prop1.Name] = prop1
+	}
+
+	for _, prop2 := range map2 {
+		inMap2[prop2.Name] = prop2
+		if _, ok := inMap1[prop2.Name]; ok {
+			inBoth[prop2.Name] = prop2
+		}
+	}
+
+	for _, prop1 := range map1 {
+		if prop2, ok := inBoth[prop1.Name]; ok {
+			var err error
+			newProp := *prop1
+			newProp.Value, err = evaluateOperator(scope, '+', prop1.Value, prop2.Value)
+			if err != nil {
+				return nil, err
+			}
+			ret = append(ret, &newProp)
+		} else {
+			ret = append(ret, prop1)
+		}
+	}
+
+	for _, prop2 := range map2 {
+		if _, ok := inBoth[prop2.Name]; !ok {
+			ret = append(ret, prop2)
+		}
+	}
+
+	return ret, nil
+}
+
+func (x *Operator) PrintfInto(value string) error {
+	if err := x.Args[0].PrintfInto(value); err != nil {
+		return err
+	}
+	return x.Args[1].PrintfInto(value)
 }
 
 func (x *Operator) Pos() scanner.Position { return x.Args[0].Pos() }
 func (x *Operator) End() scanner.Position { return x.Args[1].End() }
 
 func (x *Operator) String() string {
-	return fmt.Sprintf("(%s %c %s = %s)@%s", x.Args[0].String(), x.Operator, x.Args[1].String(),
-		x.Value, x.OperatorPos)
+	return fmt.Sprintf("(%s %c %s)@%s", x.Args[0].String(), x.Operator, x.Args[1].String(),
+		x.OperatorPos)
 }
 
 type Variable struct {
 	Name    string
 	NamePos scanner.Position
-	Value   Expression
+	Type_   Type
 }
 
 func (x *Variable) Pos() scanner.Position { return x.NamePos }
@@ -257,15 +372,27 @@ func (x *Variable) Copy() Expression {
 	return &ret
 }
 
-func (x *Variable) Eval() Expression {
-	return x.Value.Eval()
+func (x *Variable) Eval(scope *Scope) (Expression, error) {
+	if assignment := scope.Get(x.Name); assignment != nil {
+		assignment.Referenced = true
+		return assignment.Value, nil
+	}
+	return nil, fmt.Errorf("undefined variable %s", x.Name)
+}
+
+func (x *Variable) PrintfInto(value string) error {
+	return nil
 }
 
 func (x *Variable) String() string {
-	return x.Name + " = " + x.Value.String()
+	return x.Name
 }
 
-func (x *Variable) Type() Type { return x.Value.Type() }
+func (x *Variable) Type() Type {
+	// Variables do not normally have a type associated with them, this is only
+	// filled out in the androidmk tool
+	return x.Type_
+}
 
 type Map struct {
 	LBracePos  scanner.Position
@@ -285,8 +412,30 @@ func (x *Map) Copy() Expression {
 	return &ret
 }
 
-func (x *Map) Eval() Expression {
-	return x
+func (x *Map) Eval(scope *Scope) (Expression, error) {
+	newProps := make([]*Property, len(x.Properties))
+	for i, prop := range x.Properties {
+		newVal, err := prop.Value.Eval(scope)
+		if err != nil {
+			return nil, err
+		}
+		newProps[i] = &Property{
+			Name:     prop.Name,
+			NamePos:  prop.NamePos,
+			ColonPos: prop.ColonPos,
+			Value:    newVal,
+		}
+	}
+	return &Map{
+		LBracePos:  x.LBracePos,
+		RBracePos:  x.RBracePos,
+		Properties: newProps,
+	}, nil
+}
+
+func (x *Map) PrintfInto(value string) error {
+	// We should never reach this because selects cannot hold maps
+	panic("printfinto() is unsupported on maps")
 }
 
 func (x *Map) String() string {
@@ -379,8 +528,29 @@ func (x *List) Copy() Expression {
 	return &ret
 }
 
-func (x *List) Eval() Expression {
-	return x
+func (x *List) Eval(scope *Scope) (Expression, error) {
+	newValues := make([]Expression, len(x.Values))
+	for i, val := range x.Values {
+		newVal, err := val.Eval(scope)
+		if err != nil {
+			return nil, err
+		}
+		newValues[i] = newVal
+	}
+	return &List{
+		LBracePos: x.LBracePos,
+		RBracePos: x.RBracePos,
+		Values:    newValues,
+	}, nil
+}
+
+func (x *List) PrintfInto(value string) error {
+	for _, val := range x.Values {
+		if err := val.PrintfInto(value); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (x *List) String() string {
@@ -407,8 +577,26 @@ func (x *String) Copy() Expression {
 	return &ret
 }
 
-func (x *String) Eval() Expression {
-	return x
+func (x *String) Eval(scope *Scope) (Expression, error) {
+	return x, nil
+}
+
+func (x *String) PrintfInto(value string) error {
+	count := strings.Count(x.Value, "%")
+	if count == 0 {
+		return nil
+	}
+
+	if count > 1 {
+		return fmt.Errorf("list/value variable properties only support a single '%%'")
+	}
+
+	if !strings.Contains(x.Value, "%s") {
+		return fmt.Errorf("unsupported %% in value variable property")
+	}
+
+	x.Value = fmt.Sprintf(x.Value, value)
+	return nil
 }
 
 func (x *String) String() string {
@@ -433,8 +621,12 @@ func (x *Int64) Copy() Expression {
 	return &ret
 }
 
-func (x *Int64) Eval() Expression {
-	return x
+func (x *Int64) Eval(scope *Scope) (Expression, error) {
+	return x, nil
+}
+
+func (x *Int64) PrintfInto(value string) error {
+	return nil
 }
 
 func (x *Int64) String() string {
@@ -459,8 +651,12 @@ func (x *Bool) Copy() Expression {
 	return &ret
 }
 
-func (x *Bool) Eval() Expression {
-	return x
+func (x *Bool) Eval(scope *Scope) (Expression, error) {
+	return x, nil
+}
+
+func (x *Bool) PrintfInto(value string) error {
+	return nil
 }
 
 func (x *Bool) String() string {
@@ -542,29 +738,6 @@ func (c Comment) Text() string {
 	return string(buf)
 }
 
-type NotEvaluated struct {
-	Position scanner.Position
-}
-
-func (n NotEvaluated) Copy() Expression {
-	return NotEvaluated{Position: n.Position}
-}
-
-func (n NotEvaluated) String() string {
-	return "Not Evaluated"
-}
-
-func (n NotEvaluated) Type() Type {
-	return NotEvaluatedType
-}
-
-func (n NotEvaluated) Eval() Expression {
-	return NotEvaluated{Position: n.Position}
-}
-
-func (n NotEvaluated) Pos() scanner.Position { return n.Position }
-func (n NotEvaluated) End() scanner.Position { return n.Position }
-
 func endPos(pos scanner.Position, n int) scanner.Position {
 	pos.Offset += n
 	pos.Column += n
@@ -609,13 +782,13 @@ func (c *ConfigurableCondition) String() string {
 }
 
 type Select struct {
-	KeywordPos     scanner.Position // the keyword "select"
-	Conditions     []ConfigurableCondition
-	LBracePos      scanner.Position
-	RBracePos      scanner.Position
-	Cases          []*SelectCase // the case statements
-	Append         Expression
-	ExpressionType Type
+	Scope      *Scope           // scope used to evaluate the body of the select later on
+	KeywordPos scanner.Position // the keyword "select"
+	Conditions []ConfigurableCondition
+	LBracePos  scanner.Position
+	RBracePos  scanner.Position
+	Cases      []*SelectCase // the case statements
+	Append     Expression
 }
 
 func (s *Select) Pos() scanner.Position { return s.KeywordPos }
@@ -633,8 +806,14 @@ func (s *Select) Copy() Expression {
 	return &ret
 }
 
-func (s *Select) Eval() Expression {
-	return s
+func (s *Select) Eval(scope *Scope) (Expression, error) {
+	s.Scope = scope
+	return s, nil
+}
+
+func (x *Select) PrintfInto(value string) error {
+	// PrintfInto will be handled at the Configurable object level
+	panic("Cannot call PrintfInto on a select expression")
 }
 
 func (s *Select) String() string {
@@ -642,10 +821,10 @@ func (s *Select) String() string {
 }
 
 func (s *Select) Type() Type {
-	if s.ExpressionType == UnsetType && s.Append != nil {
-		return s.Append.Type()
+	if len(s.Cases) == 0 {
+		return UnsetType
 	}
-	return s.ExpressionType
+	return UnknownType
 }
 
 type SelectCase struct {
@@ -681,21 +860,25 @@ type UnsetProperty struct {
 	Position scanner.Position
 }
 
-func (n UnsetProperty) Copy() Expression {
-	return UnsetProperty{Position: n.Position}
+func (n *UnsetProperty) Copy() Expression {
+	return &UnsetProperty{Position: n.Position}
 }
 
-func (n UnsetProperty) String() string {
+func (n *UnsetProperty) String() string {
 	return "unset"
 }
 
-func (n UnsetProperty) Type() Type {
+func (n *UnsetProperty) Type() Type {
 	return UnsetType
 }
 
-func (n UnsetProperty) Eval() Expression {
-	return UnsetProperty{Position: n.Position}
+func (n *UnsetProperty) Eval(scope *Scope) (Expression, error) {
+	return n, nil
 }
 
-func (n UnsetProperty) Pos() scanner.Position { return n.Position }
-func (n UnsetProperty) End() scanner.Position { return n.Position }
+func (x *UnsetProperty) PrintfInto(value string) error {
+	return nil
+}
+
+func (n *UnsetProperty) Pos() scanner.Position { return n.Position }
+func (n *UnsetProperty) End() scanner.Position { return n.Position }

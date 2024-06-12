@@ -473,33 +473,7 @@ func ExtendBasicType(dstFieldValue, srcFieldValue reflect.Value, order Order) {
 	// structs when they want to change the default values of properties.
 	srcFieldType := srcFieldValue.Type()
 	if isConfigurable(dstFieldValue.Type()) && !isConfigurable(srcFieldType) {
-		var value reflect.Value
-		if srcFieldType.Kind() == reflect.Pointer {
-			srcFieldType = srcFieldType.Elem()
-			if srcFieldValue.IsNil() {
-				value = srcFieldValue
-			} else {
-				// Copy the pointer
-				value = reflect.New(srcFieldType)
-				value.Elem().Set(srcFieldValue.Elem())
-			}
-		} else {
-			value = reflect.New(srcFieldType)
-			value.Elem().Set(srcFieldValue)
-		}
-		caseType := configurableCaseType(srcFieldType)
-		case_ := reflect.New(caseType)
-		case_.Interface().(configurableCaseReflection).initialize(nil, value.Interface())
-		cases := reflect.MakeSlice(reflect.SliceOf(caseType), 0, 1)
-		cases = reflect.Append(cases, case_.Elem())
-		ct, err := configurableType(srcFieldType)
-		if err != nil {
-			// Should be unreachable due to earlier checks
-			panic(err.Error())
-		}
-		temp := reflect.New(ct)
-		temp.Interface().(configurablePtrReflection).initialize("", nil, cases.Interface())
-		srcFieldValue = temp.Elem()
+		srcFieldValue = promoteValueToConfigurable(srcFieldValue)
 	}
 
 	switch srcFieldValue.Kind() {

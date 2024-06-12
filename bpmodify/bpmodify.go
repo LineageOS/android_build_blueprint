@@ -85,7 +85,7 @@ func processFile(filename string, in io.Reader, out io.Writer) error {
 		return err
 	}
 	r := bytes.NewBuffer(src)
-	file, errs := parser.Parse(filename, r, parser.NewScope(nil))
+	file, errs := parser.Parse(filename, r)
 	if len(errs) > 0 {
 		for _, err := range errs {
 			fmt.Fprintln(os.Stderr, err)
@@ -131,11 +131,13 @@ func findModules(file *parser.File) (modified bool, errs []error) {
 	for _, def := range file.Defs {
 		if module, ok := def.(*parser.Module); ok {
 			for _, prop := range module.Properties {
-				if prop.Name == "name" && prop.Value.Type() == parser.StringType && targetedModule(prop.Value.Eval().(*parser.String).Value) {
-					for _, p := range targetedProperties.properties {
-						m, newErrs := processModuleProperty(module, prop.Name, file, p)
-						errs = append(errs, newErrs...)
-						modified = modified || m
+				if prop.Name == "name" {
+					if stringValue, ok := prop.Value.(*parser.String); ok && targetedModule(stringValue.Value) {
+						for _, p := range targetedProperties.properties {
+							m, newErrs := processModuleProperty(module, prop.Name, file, p)
+							errs = append(errs, newErrs...)
+							modified = modified || m
+						}
 					}
 				}
 			}
@@ -194,7 +196,7 @@ func getOrCreateRecursiveProperty(module *parser.Module, name string, prefixes [
 	m := &module.Map
 	for i, prefix := range prefixes {
 		if prop, found := m.GetProperty(prefix); found {
-			if mm, ok := prop.Value.Eval().(*parser.Map); ok {
+			if mm, ok := prop.Value.(*parser.Map); ok {
 				m = mm
 			} else {
 				// We've found a property in the AST and such property is not of type
@@ -236,9 +238,9 @@ func processParameter(value parser.Expression, paramName, moduleName string,
 	}
 
 	if (*replaceProperty).size() != 0 {
-		if list, ok := value.Eval().(*parser.List); ok {
+		if list, ok := value.(*parser.List); ok {
 			return parser.ReplaceStringsInList(list, (*replaceProperty).oldNameToNewName), nil
-		} else if str, ok := value.Eval().(*parser.String); ok {
+		} else if str, ok := value.(*parser.String); ok {
 			oldVal := str.Value
 			replacementValue := (*replaceProperty).oldNameToNewName[oldVal]
 			if replacementValue != "" {
