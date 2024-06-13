@@ -698,6 +698,43 @@ foo {
 }
 `,
 	},
+	{
+		name: "Select with multiline inner expression",
+		input: `
+foo {
+    cflags: [
+        "-DPRODUCT_COMPATIBLE_PROPERTY",
+        "-DRIL_SHLIB",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+    ] + select(soong_config_variable("sim", "sim_count"), {
+        "2": [
+            "-DANDROID_MULTI_SIM",
+            "-DANDROID_SIM_COUNT_2",
+        ],
+        default: [],
+    }),
+}
+`,
+		output: `
+foo {
+    cflags: [
+        "-DPRODUCT_COMPATIBLE_PROPERTY",
+        "-DRIL_SHLIB",
+        "-Wall",
+        "-Werror",
+        "-Wextra",
+    ] + select(soong_config_variable("sim", "sim_count"), {
+        "2": [
+            "-DANDROID_MULTI_SIM",
+            "-DANDROID_SIM_COUNT_2",
+        ],
+        default: [],
+    }),
+}
+`,
+	},
 }
 
 func TestPrinter(t *testing.T) {
