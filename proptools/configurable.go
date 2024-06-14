@@ -296,7 +296,7 @@ func NewConfigurableCase[T ConfigurableElements](patterns []ConfigurablePattern,
 	patterns = slices.Clone(patterns)
 	return ConfigurableCase[T]{
 		patterns: patterns,
-		value:    copyConfiguredValue(value),
+		value:    copyConfiguredValuePtr(value),
 	}
 }
 
@@ -408,6 +408,22 @@ func NewConfigurable[T ConfigurableElements](conditions []ConfigurableCondition,
 	}
 }
 
+func (c *Configurable[T]) AppendSimpleValue(value T) {
+	value = copyConfiguredValue(value)
+	// This may be a property that was never initialized from a bp file
+	if c.inner == nil {
+		c.inner = &configurableInner[T]{
+			single: singleConfigurable[T]{
+				cases: []ConfigurableCase[T]{{
+					value: &value,
+				}},
+			},
+		}
+		return
+	}
+	c.inner.appendSimpleValue(value)
+}
+
 // Get returns the final value for the configurable property.
 // A configurable property may be unset, in which case Get will return nil.
 func (c *Configurable[T]) Get(evaluator ConfigurableEvaluator) ConfigurableOptional[T] {
@@ -420,7 +436,7 @@ func (c *Configurable[T]) GetOrDefault(evaluator ConfigurableEvaluator, defaultV
 	result := c.inner.evaluate(c.propertyName, evaluator)
 	if result != nil {
 		// Copy the result so that it can't be changed from soong
-		return copyAndDereferenceConfiguredValue(result)
+		return copyConfiguredValue(*result)
 	}
 	return defaultValue
 }
@@ -628,6 +644,21 @@ func (c *configurableInner[T]) setAppend(append *configurableInner[T], replace b
 	}
 }
 
+func (c *configurableInner[T]) appendSimpleValue(value T) {
+	if c.next == nil {
+		c.replace = false
+		c.next = &configurableInner[T]{
+			single: singleConfigurable[T]{
+				cases: []ConfigurableCase[T]{{
+					value: &value,
+				}},
+			},
+		}
+	} else {
+		c.next.appendSimpleValue(value)
+	}
+}
+
 func (c Configurable[T]) printfInto(value string) error {
 	return c.inner.printfInto(value)
 }
@@ -754,7 +785,7 @@ func (c Configurable[T]) configuredType() reflect.Type {
 	return reflect.TypeOf((*T)(nil)).Elem()
 }
 
-func copyConfiguredValue[T ConfigurableElements](t *T) *T {
+func copyConfiguredValuePtr[T ConfigurableElements](t *T) *T {
 	if t == nil {
 		return nil
 	}
@@ -781,12 +812,12 @@ func configuredValuePtrToOptional[T ConfigurableElements](t *T) ConfigurableOpti
 	}
 }
 
-func copyAndDereferenceConfiguredValue[T ConfigurableElements](t *T) T {
-	switch t2 := any(*t).(type) {
+func copyConfiguredValue[T ConfigurableElements](t T) T {
+	switch t2 := any(t).(type) {
 	case []string:
 		return any(slices.Clone(t2)).(T)
 	default:
-		return *t
+		return t
 	}
 }
 
