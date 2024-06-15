@@ -227,7 +227,7 @@ func (p *printer) printSelect(s *Select) {
 		} else {
 			p.printExpression(c.Value)
 		}
-		p.printToken(",", c.Value.Pos())
+		p.printToken(",", c.Value.End())
 	}
 	p.requestNewline()
 	p.unindent(s.RBracePos)
