@@ -143,7 +143,7 @@ func (p *printer) printSelect(s *Select) {
 		return
 	}
 	if len(s.Cases) == 1 && len(s.Cases[0].Patterns) == 1 {
-		if str, ok := s.Cases[0].Patterns[0].(*String); ok && str.Value == default_select_branch_name {
+		if str, ok := s.Cases[0].Patterns[0].Value.(*String); ok && str.Value == default_select_branch_name {
 			p.printExpression(s.Cases[0].Value)
 			p.pos = s.RBracePos
 			return
@@ -196,22 +196,7 @@ func (p *printer) printSelect(s *Select) {
 			p.printToken("(", p.pos)
 		}
 		for i, pat := range c.Patterns {
-			switch pat := pat.(type) {
-			case *String:
-				if pat.Value != default_select_branch_name {
-					p.printToken(strconv.Quote(pat.Value), pat.LiteralPos)
-				} else {
-					p.printToken("default", pat.LiteralPos)
-				}
-			case *Bool:
-				s := "false"
-				if pat.Value {
-					s = "true"
-				}
-				p.printToken(s, pat.LiteralPos)
-			default:
-				panic("Unhandled case")
-			}
+			p.printSelectPattern(pat)
 			if i < len(c.Patterns)-1 {
 				p.printToken(",", p.pos)
 				p.requestSpace()
@@ -237,6 +222,33 @@ func (p *printer) printSelect(s *Select) {
 		p.printToken("+", s.RBracePos)
 		p.requestSpace()
 		p.printExpression(s.Append)
+	}
+}
+
+func (p *printer) printSelectPattern(pat SelectPattern) {
+	switch pat := pat.Value.(type) {
+	case *String:
+		if pat.Value == default_select_branch_name {
+			p.printToken("default", pat.LiteralPos)
+		} else if pat.Value == any_select_branch_name {
+			p.printToken("any", pat.LiteralPos)
+		} else {
+			p.printToken(strconv.Quote(pat.Value), pat.LiteralPos)
+		}
+	case *Bool:
+		s := "false"
+		if pat.Value {
+			s = "true"
+		}
+		p.printToken(s, pat.LiteralPos)
+	default:
+		panic("Unhandled case")
+	}
+	if pat.Binding.Name != "" {
+		p.requestSpace()
+		p.printToken("@", pat.Binding.Pos())
+		p.requestSpace()
+		p.printExpression(&pat.Binding)
 	}
 }
 

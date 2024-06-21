@@ -445,10 +445,12 @@ func (ctx *unpackContext) unpackToConfigurable(propertyName string, property *pa
 		for _, c := range v.Cases {
 			patterns := make([]ConfigurablePattern, len(c.Patterns))
 			for i, pat := range c.Patterns {
-				switch pat := pat.(type) {
+				switch pat := pat.Value.(type) {
 				case *parser.String:
 					if pat.Value == "__soong_conditions_default__" {
 						patterns[i].typ = configurablePatternTypeDefault
+					} else if pat.Value == "__soong_conditions_any__" {
+						patterns[i].typ = configurablePatternTypeAny
 					} else {
 						patterns[i].typ = configurablePatternTypeString
 						patterns[i].stringValue = pat.Value
@@ -459,6 +461,7 @@ func (ctx *unpackContext) unpackToConfigurable(propertyName string, property *pa
 				default:
 					panic("unimplemented")
 				}
+				patterns[i].binding = pat.Binding.Name
 			}
 
 			case_ := reflect.New(configurableCaseType)

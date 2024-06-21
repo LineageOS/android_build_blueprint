@@ -131,6 +131,10 @@ func (p *Property) String() string {
 func (p *Property) Pos() scanner.Position { return p.NamePos }
 func (p *Property) End() scanner.Position { return p.Value.End() }
 
+func (p *Property) MarkReferencedVariables(scope *Scope) {
+	p.Value.MarkReferencedVariables(scope)
+}
+
 // An Expression is a Value in a Property or Assignment.  It can be a literal (String or Bool), a
 // Map, a List, an Operator that combines two expressions of the same type, or a Variable that
 // references and Assignment.
@@ -152,6 +156,11 @@ type Expression interface {
 	// value. It will modify the AST in-place. This is used to implement soong config value
 	// variables, but should be removed when those have switched to selects.
 	PrintfInto(value string) error
+	// MarkReferencedVariables marks the variables in the given scope referenced if there
+	// is a matching variable reference in this expression. This happens naturally during
+	// Eval as well, but for selects, we need to mark variables as referenced without
+	// actually evaluating the expression yet.
+	MarkReferencedVariables(scope *Scope)
 }
 
 // ExpressionsAreSame tells whether the two values are the same Expression.
@@ -350,6 +359,11 @@ func (x *Operator) PrintfInto(value string) error {
 	return x.Args[1].PrintfInto(value)
 }
 
+func (x *Operator) MarkReferencedVariables(scope *Scope) {
+	x.Args[0].MarkReferencedVariables(scope)
+	x.Args[1].MarkReferencedVariables(scope)
+}
+
 func (x *Operator) Pos() scanner.Position { return x.Args[0].Pos() }
 func (x *Operator) End() scanner.Position { return x.Args[1].End() }
 
@@ -382,6 +396,12 @@ func (x *Variable) Eval(scope *Scope) (Expression, error) {
 
 func (x *Variable) PrintfInto(value string) error {
 	return nil
+}
+
+func (x *Variable) MarkReferencedVariables(scope *Scope) {
+	if assignment := scope.Get(x.Name); assignment != nil {
+		assignment.Referenced = true
+	}
 }
 
 func (x *Variable) String() string {
@@ -436,6 +456,12 @@ func (x *Map) Eval(scope *Scope) (Expression, error) {
 func (x *Map) PrintfInto(value string) error {
 	// We should never reach this because selects cannot hold maps
 	panic("printfinto() is unsupported on maps")
+}
+
+func (x *Map) MarkReferencedVariables(scope *Scope) {
+	for _, prop := range x.Properties {
+		prop.MarkReferencedVariables(scope)
+	}
 }
 
 func (x *Map) String() string {
@@ -553,6 +579,12 @@ func (x *List) PrintfInto(value string) error {
 	return nil
 }
 
+func (x *List) MarkReferencedVariables(scope *Scope) {
+	for _, val := range x.Values {
+		val.MarkReferencedVariables(scope)
+	}
+}
+
 func (x *List) String() string {
 	valueStrings := make([]string, len(x.Values))
 	for i, value := range x.Values {
@@ -599,6 +631,9 @@ func (x *String) PrintfInto(value string) error {
 	return nil
 }
 
+func (x *String) MarkReferencedVariables(scope *Scope) {
+}
+
 func (x *String) String() string {
 	return fmt.Sprintf("%q@%s", x.Value, x.LiteralPos)
 }
@@ -629,6 +664,9 @@ func (x *Int64) PrintfInto(value string) error {
 	return nil
 }
 
+func (x *Int64) MarkReferencedVariables(scope *Scope) {
+}
+
 func (x *Int64) String() string {
 	return fmt.Sprintf("%q@%s", x.Value, x.LiteralPos)
 }
@@ -657,6 +695,9 @@ func (x *Bool) Eval(scope *Scope) (Expression, error) {
 
 func (x *Bool) PrintfInto(value string) error {
 	return nil
+}
+
+func (x *Bool) MarkReferencedVariables(scope *Scope) {
 }
 
 func (x *Bool) String() string {
@@ -808,12 +849,22 @@ func (s *Select) Copy() Expression {
 
 func (s *Select) Eval(scope *Scope) (Expression, error) {
 	s.Scope = scope
+	s.MarkReferencedVariables(scope)
 	return s, nil
 }
 
 func (x *Select) PrintfInto(value string) error {
 	// PrintfInto will be handled at the Configurable object level
 	panic("Cannot call PrintfInto on a select expression")
+}
+
+func (x *Select) MarkReferencedVariables(scope *Scope) {
+	for _, c := range x.Cases {
+		c.MarkReferencedVariables(scope)
+	}
+	if x.Append != nil {
+		x.Append.MarkReferencedVariables(scope)
+	}
 }
 
 func (s *Select) String() string {
@@ -827,10 +878,27 @@ func (s *Select) Type() Type {
 	return UnknownType
 }
 
+type SelectPattern struct {
+	Value   Expression
+	Binding Variable
+}
+
+func (c *SelectPattern) Pos() scanner.Position { return c.Value.Pos() }
+func (c *SelectPattern) End() scanner.Position {
+	if c.Binding.NamePos.IsValid() {
+		return c.Binding.End()
+	}
+	return c.Value.End()
+}
+
 type SelectCase struct {
-	Patterns []Expression
+	Patterns []SelectPattern
 	ColonPos scanner.Position
 	Value    Expression
+}
+
+func (x *SelectCase) MarkReferencedVariables(scope *Scope) {
+	x.Value.MarkReferencedVariables(scope)
 }
 
 func (c *SelectCase) Copy() *SelectCase {
@@ -878,6 +946,9 @@ func (n *UnsetProperty) Eval(scope *Scope) (Expression, error) {
 
 func (x *UnsetProperty) PrintfInto(value string) error {
 	return nil
+}
+
+func (x *UnsetProperty) MarkReferencedVariables(scope *Scope) {
 }
 
 func (n *UnsetProperty) Pos() scanner.Position { return n.Position }

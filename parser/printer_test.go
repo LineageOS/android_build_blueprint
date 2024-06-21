@@ -735,6 +735,26 @@ foo {
 }
 `,
 	},
+	{
+		name: "Select with bindings",
+		input: `
+foo {
+    stuff: select(arch(), {
+        "x86": "a",
+        any
+          @ baz: "b" + baz,
+    }),
+}
+`,
+		output: `
+foo {
+    stuff: select(arch(), {
+        "x86": "a",
+        any @ baz: "b" + baz,
+    }),
+}
+`,
+	},
 }
 
 func TestPrinter(t *testing.T) {

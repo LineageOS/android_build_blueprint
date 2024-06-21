@@ -151,6 +151,17 @@ type ConfigurableValue struct {
 	boolValue   bool
 }
 
+func (c *ConfigurableValue) toExpression() parser.Expression {
+	switch c.typ {
+	case configurableValueTypeBool:
+		return &parser.Bool{Value: c.boolValue}
+	case configurableValueTypeString:
+		return &parser.String{Value: c.stringValue}
+	default:
+		panic(fmt.Sprintf("Unhandled configurableValueType: %s", c.typ.String()))
+	}
+}
+
 func (c *ConfigurableValue) String() string {
 	switch c.typ {
 	case configurableValueTypeString:
@@ -194,6 +205,7 @@ const (
 	configurablePatternTypeString configurablePatternType = iota
 	configurablePatternTypeBool
 	configurablePatternTypeDefault
+	configurablePatternTypeAny
 )
 
 func (v *configurablePatternType) String() string {
@@ -204,6 +216,8 @@ func (v *configurablePatternType) String() string {
 		return "bool"
 	case configurablePatternTypeDefault:
 		return "default"
+	case configurablePatternTypeAny:
+		return "any"
 	default:
 		panic("unimplemented")
 	}
@@ -223,6 +237,7 @@ type ConfigurablePattern struct {
 	typ         configurablePatternType
 	stringValue string
 	boolValue   bool
+	binding     string
 }
 
 func NewStringConfigurablePattern(s string) ConfigurablePattern {
@@ -252,6 +267,9 @@ func (p *ConfigurablePattern) matchesValue(v ConfigurableValue) bool {
 	if v.typ == configurableValueTypeUndefined {
 		return false
 	}
+	if p.typ == configurablePatternTypeAny {
+		return true
+	}
 	if p.typ != v.typ.patternType() {
 		return false
 	}
@@ -270,6 +288,9 @@ func (p *ConfigurablePattern) matchesValueType(v ConfigurableValue) bool {
 		return true
 	}
 	if v.typ == configurableValueTypeUndefined {
+		return true
+	}
+	if p.typ == configurablePatternTypeAny {
 		return true
 	}
 	return p.typ == v.typ.patternType()
@@ -525,7 +546,8 @@ func (c *singleConfigurable[T]) evaluateNonTransitive(propertyName string, evalu
 			}
 		}
 		if allMatch && !foundMatch {
-			if r, err := expressionToConfiguredValue[T](case_.value, c.scope); err != nil {
+			newScope := createScopeWithBindings(c.scope, case_.patterns, values)
+			if r, err := expressionToConfiguredValue[T](case_.value, newScope); err != nil {
 				evaluator.PropertyErrorf(propertyName, "%s", err.Error())
 				return nil
 			} else {
@@ -540,6 +562,27 @@ func (c *singleConfigurable[T]) evaluateNonTransitive(propertyName string, evalu
 
 	evaluator.PropertyErrorf(propertyName, "%s had value %s, which was not handled by the select statement", c.conditions[nonMatchingIndex].String(), values[nonMatchingIndex].String())
 	return nil
+}
+
+func createScopeWithBindings(parent *parser.Scope, patterns []ConfigurablePattern, values []ConfigurableValue) *parser.Scope {
+	result := parent
+	for i, pattern := range patterns {
+		if pattern.binding != "" {
+			if result == parent {
+				result = parser.NewScope(parent)
+			}
+			err := result.HandleAssignment(&parser.Assignment{
+				Name:     pattern.binding,
+				Value:    values[i].toExpression(),
+				Assigner: "=",
+			})
+			if err != nil {
+				// This shouldn't happen due to earlier validity checks
+				panic(err.Error())
+			}
+		}
+	}
+	return result
 }
 
 func appendConfiguredValues[T ConfigurableElements](a, b *T) *T {

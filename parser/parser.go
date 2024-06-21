@@ -29,6 +29,7 @@ var errTooManyErrors = errors.New("too many errors")
 const maxErrors = 1
 
 const default_select_branch_name = "__soong_conditions_default__"
+const any_select_branch_name = "__soong_conditions_any__"
 
 type ParseError struct {
 	Err error
@@ -502,44 +503,72 @@ func (p *parser) parseSelect() Expression {
 		return nil
 	}
 
-	parseOnePattern := func() Expression {
+	maybeParseBinding := func() (Variable, bool) {
+		if p.scanner.TokenText() != "@" {
+			return Variable{}, false
+		}
+		p.next()
+		value := Variable{
+			Name:    p.scanner.TokenText(),
+			NamePos: p.scanner.Position,
+		}
+		p.accept(scanner.Ident)
+		return value, true
+	}
+
+	parseOnePattern := func() SelectPattern {
+		var result SelectPattern
 		switch p.tok {
 		case scanner.Ident:
 			switch p.scanner.TokenText() {
-			case "default":
+			case "any":
+				result.Value = &String{
+					LiteralPos: p.scanner.Position,
+					Value:      any_select_branch_name,
+				}
 				p.next()
-				return &String{
+				if binding, exists := maybeParseBinding(); exists {
+					result.Binding = binding
+				}
+				return result
+			case "default":
+				result.Value = &String{
 					LiteralPos: p.scanner.Position,
 					Value:      default_select_branch_name,
 				}
-			case "true":
 				p.next()
-				return &Bool{
+				return result
+			case "true":
+				result.Value = &Bool{
 					LiteralPos: p.scanner.Position,
 					Value:      true,
 				}
-			case "false":
 				p.next()
-				return &Bool{
+				return result
+			case "false":
+				result.Value = &Bool{
 					LiteralPos: p.scanner.Position,
 					Value:      false,
 				}
+				p.next()
+				return result
 			default:
-				p.errorf("Expted a string, true, false, or default, got %s", p.scanner.TokenText())
+				p.errorf("Expected a string, true, false, or default, got %s", p.scanner.TokenText())
 			}
 		case scanner.String:
 			if s := p.parseStringValue(); s != nil {
 				if strings.HasPrefix(s.Value, "__soong") {
-					p.errorf("select branch conditions starting with __soong are reserved for internal use")
-					return nil
+					p.errorf("select branch patterns starting with __soong are reserved for internal use")
+					return result
 				}
-				return s
+				result.Value = s
+				return result
 			}
 			fallthrough
 		default:
-			p.errorf("Expted a string, true, false, or default, got %s", p.scanner.TokenText())
+			p.errorf("Expected a string, true, false, or default, got %s", p.scanner.TokenText())
 		}
-		return nil
+		return result
 	}
 
 	hasNonUnsetValue := false
@@ -551,11 +580,7 @@ func (p *parser) parseSelect() Expression {
 				return nil
 			}
 			for i := 0; i < len(conditions); i++ {
-				if p := parseOnePattern(); p != nil {
-					c.Patterns = append(c.Patterns, p)
-				} else {
-					return nil
-				}
+				c.Patterns = append(c.Patterns, parseOnePattern())
 				if i < len(conditions)-1 {
 					if !p.accept(',') {
 						return nil
@@ -569,11 +594,7 @@ func (p *parser) parseSelect() Expression {
 				return nil
 			}
 		} else {
-			if p := parseOnePattern(); p != nil {
-				c.Patterns = append(c.Patterns, p)
-			} else {
-				return nil
-			}
+			c.Patterns = append(c.Patterns, parseOnePattern())
 		}
 		c.ColonPos = p.scanner.Position
 		if !p.accept(':') {
@@ -599,16 +620,17 @@ func (p *parser) parseSelect() Expression {
 		return nil
 	}
 
-	patternsEqual := func(a, b Expression) bool {
-		switch a2 := a.(type) {
+	patternsEqual := func(a, b SelectPattern) bool {
+		// We can ignore the bindings, they don't affect which pattern is matched
+		switch a2 := a.Value.(type) {
 		case *String:
-			if b2, ok := b.(*String); ok {
+			if b2, ok := b.Value.(*String); ok {
 				return a2.Value == b2.Value
 			} else {
 				return false
 			}
 		case *Bool:
-			if b2, ok := b.(*Bool); ok {
+			if b2, ok := b.Value.(*Bool); ok {
 				return a2.Value == b2.Value
 			} else {
 				return false
@@ -619,7 +641,7 @@ func (p *parser) parseSelect() Expression {
 		}
 	}
 
-	patternListsEqual := func(a, b []Expression) bool {
+	patternListsEqual := func(a, b []SelectPattern) bool {
 		if len(a) != len(b) {
 			return false
 		}
@@ -632,18 +654,29 @@ func (p *parser) parseSelect() Expression {
 	}
 
 	for i, c := range result.Cases {
-		// Check for duplicates
+		// Check for duplicate patterns across different branches
 		for _, d := range result.Cases[i+1:] {
 			if patternListsEqual(c.Patterns, d.Patterns) {
 				p.errorf("Found duplicate select patterns: %v", c.Patterns)
 				return nil
 			}
 		}
+		// check for duplicate bindings within this branch
+		for i := range c.Patterns {
+			if c.Patterns[i].Binding.Name != "" {
+				for j := i + 1; j < len(c.Patterns); j++ {
+					if c.Patterns[i].Binding.Name == c.Patterns[j].Binding.Name {
+						p.errorf("Found duplicate select pattern binding: %s", c.Patterns[i].Binding.Name)
+						return nil
+					}
+				}
+			}
+		}
 		// Check that the only all-default cases is the last one
 		if i < len(result.Cases)-1 {
 			isAllDefault := true
 			for _, x := range c.Patterns {
-				if x2, ok := x.(*String); !ok || x2.Value != default_select_branch_name {
+				if x2, ok := x.Value.(*String); !ok || x2.Value != default_select_branch_name {
 					isAllDefault = false
 					break
 				}

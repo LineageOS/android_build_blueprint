@@ -860,6 +860,17 @@ func TestParserError(t *testing.T) {
 			`,
 			err: "Duplicate select condition found: arch()",
 		},
+		{
+			name: "select with duplicate binding",
+			input: `
+			m {
+				foo: select((arch(), os()), {
+					(any @ bar, any @ bar): true,
+				}),
+			}
+			`,
+			err: "Found duplicate select pattern binding: bar",
+		},
 		// TODO: test more parser errors
 	}
 
