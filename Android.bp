@@ -133,6 +133,7 @@ bootstrap_go_package {
     ],
     testSrcs: [
         "proptools/clone_test.go",
+        "proptools/configurable_test.go",
         "proptools/escape_test.go",
         "proptools/extend_test.go",
         "proptools/filter_test.go",

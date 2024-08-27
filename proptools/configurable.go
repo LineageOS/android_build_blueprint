@@ -412,6 +412,22 @@ type Configurable[T ConfigurableElements] struct {
 	marker       configurableMarker
 	propertyName string
 	inner        *configurableInner[T]
+	// See Configurable.evaluate for a description of the postProcessor algorithm and
+	// why this is a 2d list
+	postProcessors *[][]postProcessor[T]
+}
+
+type postProcessor[T ConfigurableElements] struct {
+	f func(T) T
+	// start and end represent the range of configurableInners
+	// that this postprocessor is applied to. When appending two configurables
+	// together, the start and end values will stay the same for the left
+	// configurable's postprocessors, but the rights will be rebased by the
+	// number of configurableInners in the left configurable. This way
+	// the postProcessors still only apply to the configurableInners they
+	// origionally applied to before the appending.
+	start int
+	end   int
 }
 
 type configurableInner[T ConfigurableElements] struct {
@@ -440,6 +456,7 @@ func NewConfigurable[T ConfigurableElements](conditions []ConfigurableCondition,
 	// Clone the slices so they can't be modified from soong
 	conditions = slices.Clone(conditions)
 	cases = slices.Clone(cases)
+	var zeroPostProcessors [][]postProcessor[T]
 	return Configurable[T]{
 		inner: &configurableInner[T]{
 			single: singleConfigurable[T]{
@@ -447,40 +464,203 @@ func NewConfigurable[T ConfigurableElements](conditions []ConfigurableCondition,
 				cases:      cases,
 			},
 		},
+		postProcessors: &zeroPostProcessors,
 	}
+}
+
+func newConfigurableWithPropertyName[T ConfigurableElements](propertyName string, conditions []ConfigurableCondition, cases []ConfigurableCase[T], addScope bool) Configurable[T] {
+	result := NewConfigurable(conditions, cases)
+	result.propertyName = propertyName
+	if addScope {
+		for curr := result.inner; curr != nil; curr = curr.next {
+			curr.single.scope = parser.NewScope(nil)
+		}
+	}
+	return result
 }
 
 func (c *Configurable[T]) AppendSimpleValue(value T) {
 	value = copyConfiguredValue(value)
 	// This may be a property that was never initialized from a bp file
 	if c.inner == nil {
-		c.inner = &configurableInner[T]{
-			single: singleConfigurable[T]{
-				cases: []ConfigurableCase[T]{{
-					value: configuredValueToExpression(value),
-				}},
-			},
-		}
+		c.initialize(nil, "", nil, []ConfigurableCase[T]{{
+			value: configuredValueToExpression(value),
+		}})
 		return
 	}
 	c.inner.appendSimpleValue(value)
 }
 
+// AddPostProcessor adds a function that will modify the result of
+// Get() when Get() is called. It operates on all the current contents
+// of the Configurable property, but if other values are appended to
+// the Configurable property afterwards, the postProcessor will not run
+// on them. This can be useful to essentially modify a configurable
+// property without evaluating it.
+func (c *Configurable[T]) AddPostProcessor(p func(T) T) {
+	// Add the new postProcessor on top of the tallest stack of postProcessors.
+	// See Configurable.evaluate for more details on the postProcessors algorithm
+	// and data structure.
+	num_links := c.inner.numLinks()
+	if c.postProcessors == nil || len(*c.postProcessors) == 0 {
+		c.postProcessors = &[][]postProcessor[T]{{{
+			f:     p,
+			start: 0,
+			end:   num_links,
+		}}}
+	} else {
+		deepestI := 0
+		deepestDepth := 0
+		for i := 0; i < len(*c.postProcessors); i++ {
+			if len((*c.postProcessors)[i]) > deepestDepth {
+				deepestDepth = len((*c.postProcessors)[i])
+				deepestI = i
+			}
+		}
+		(*c.postProcessors)[deepestI] = append((*c.postProcessors)[deepestI], postProcessor[T]{
+			f:     p,
+			start: 0,
+			end:   num_links,
+		})
+	}
+}
+
 // Get returns the final value for the configurable property.
 // A configurable property may be unset, in which case Get will return nil.
 func (c *Configurable[T]) Get(evaluator ConfigurableEvaluator) ConfigurableOptional[T] {
-	result := c.inner.evaluate(c.propertyName, evaluator)
+	result := c.evaluate(c.propertyName, evaluator)
 	return configuredValuePtrToOptional(result)
 }
 
 // GetOrDefault is the same as Get, but will return the provided default value if the property was unset.
 func (c *Configurable[T]) GetOrDefault(evaluator ConfigurableEvaluator, defaultValue T) T {
-	result := c.inner.evaluate(c.propertyName, evaluator)
+	result := c.evaluate(c.propertyName, evaluator)
 	if result != nil {
 		// Copy the result so that it can't be changed from soong
 		return copyConfiguredValue(*result)
 	}
 	return defaultValue
+}
+
+type valueAndIndices[T ConfigurableElements] struct {
+	value   *T
+	replace bool
+	// Similar to start/end in postProcessor, these represent the origional
+	// range or configurableInners that this merged group represents. It's needed
+	// in order to apply recursive postProcessors to only the relevant
+	// configurableInners, even after those configurableInners have been merged
+	// in order to apply an earlier postProcessor.
+	start int
+	end   int
+}
+
+func (c *Configurable[T]) evaluate(propertyName string, evaluator ConfigurableEvaluator) *T {
+	if c.inner == nil {
+		return nil
+	}
+
+	if len(*c.postProcessors) == 0 {
+		// Use a simpler algorithm if there are no postprocessors
+		return c.inner.evaluate(propertyName, evaluator)
+	}
+
+	// The basic idea around evaluating with postprocessors is that each individual
+	// node in the chain (each configurableInner) is first evaluated, and then when
+	// a postprocessor operates on a certain range, that range is merged before passing
+	// it to the postprocessor. We want postProcessors to only accept a final merged
+	// value instead of a linked list, but at the same time, only operate over a portion
+	// of the list. If more configurables are appended onto this one, their values won't
+	// be operated on by the existing postProcessors, but they may have their own
+	// postprocessors.
+	//
+	// _____________________
+	// |         __________|
+	// ______    |    _____|        ___
+	// |    |         |    |        | |
+	// a -> b -> c -> d -> e -> f -> g
+	//
+	// In this diagram, the letters along the bottom is the chain of configurableInners.
+	// The brackets on top represent postprocessors, where higher brackets are processed
+	// after lower ones.
+	//
+	// To evaluate this example, first we evaluate the raw values for all nodes a->g.
+	// Then we merge nodes a/b and d/e and apply the postprocessors to their merged values,
+	// and also to g. Those merged and postprocessed nodes are then reinserted into the
+	// list, and we move on to doing the higher level postprocessors (starting with the c->e one)
+	// in the same way. When all postprocessors are done, a final merge is done on anything
+	// leftover.
+	//
+	// The Configurable.postProcessors field is a 2d array to represent this hierarchy.
+	// The outer index moves right on this graph, the inner index goes up.
+	// When adding a new postProcessor, it will always be the last postProcessor to run
+	// until another is added or another configurable is appended. So in AddPostProcessor(),
+	// we add it to the tallest existing stack.
+
+	var currentValues []valueAndIndices[T]
+	for curr, i := c.inner, 0; curr != nil; curr, i = curr.next, i+1 {
+		value := curr.single.evaluateNonTransitive(propertyName, evaluator)
+		currentValues = append(currentValues, valueAndIndices[T]{
+			value:   value,
+			replace: curr.replace,
+			start:   i,
+			end:     i + 1,
+		})
+	}
+
+	if c.postProcessors == nil || len(*c.postProcessors) == 0 {
+		return mergeValues(currentValues).value
+	}
+
+	foundPostProcessor := true
+	for depth := 0; foundPostProcessor; depth++ {
+		foundPostProcessor = false
+		var newValues []valueAndIndices[T]
+		i := 0
+		for _, postProcessorGroup := range *c.postProcessors {
+			if len(postProcessorGroup) > depth {
+				foundPostProcessor = true
+				postProcessor := postProcessorGroup[depth]
+				startI := 0
+				endI := 0
+				for currentValues[startI].start < postProcessor.start {
+					startI++
+				}
+				for currentValues[endI].end < postProcessor.end {
+					endI++
+				}
+				endI++
+				newValues = append(newValues, currentValues[i:startI]...)
+				merged := mergeValues(currentValues[startI:endI])
+				if merged.value != nil {
+					processed := postProcessor.f(*merged.value)
+					merged.value = &processed
+				}
+				newValues = append(newValues, merged)
+				i = endI
+			}
+		}
+		newValues = append(newValues, currentValues[i:]...)
+		currentValues = newValues
+	}
+
+	return mergeValues(currentValues).value
+}
+
+func mergeValues[T ConfigurableElements](values []valueAndIndices[T]) valueAndIndices[T] {
+	if len(values) < 0 {
+		panic("Expected at least 1 value in mergeValues")
+	}
+	result := values[0]
+	for i := 1; i < len(values); i++ {
+		if result.replace {
+			result.value = replaceConfiguredValues(result.value, values[i].value)
+		} else {
+			result.value = appendConfiguredValues(result.value, values[i].value)
+		}
+		result.end = values[i].end
+		result.replace = values[i].replace
+	}
+	return result
 }
 
 func (c *configurableInner[T]) evaluate(propertyName string, evaluator ConfigurableEvaluator) *T {
@@ -668,6 +848,12 @@ func (c *Configurable[T]) initialize(scope *parser.Scope, propertyName string, c
 			scope:      scope,
 		},
 	}
+	var postProcessors [][]postProcessor[T]
+	c.postProcessors = &postProcessors
+}
+
+func (c *Configurable[T]) Append(other Configurable[T]) {
+	c.setAppend(other, false, false)
 }
 
 func (c Configurable[T]) setAppend(append any, replace bool, prepend bool) {
@@ -675,10 +861,35 @@ func (c Configurable[T]) setAppend(append any, replace bool, prepend bool) {
 	if a.inner.isEmpty() {
 		return
 	}
+
+	if prepend {
+		newBase := a.inner.numLinks()
+		*c.postProcessors = appendPostprocessors(*a.postProcessors, *c.postProcessors, newBase)
+	} else {
+		newBase := c.inner.numLinks()
+		*c.postProcessors = appendPostprocessors(*c.postProcessors, *a.postProcessors, newBase)
+	}
+
 	c.inner.setAppend(a.inner, replace, prepend)
 	if c.inner == c.inner.next {
 		panic("pointer loop")
 	}
+}
+
+func appendPostprocessors[T ConfigurableElements](a, b [][]postProcessor[T], newBase int) [][]postProcessor[T] {
+	var result [][]postProcessor[T]
+	for i := 0; i < len(a); i++ {
+		result = append(result, slices.Clone(a[i]))
+	}
+	for i := 0; i < len(b); i++ {
+		n := slices.Clone(b[i])
+		for j := 0; j < len(n); j++ {
+			n[j].start += newBase
+			n[j].end += newBase
+		}
+		result = append(result, n)
+	}
+	return result
 }
 
 func (c *configurableInner[T]) setAppend(append *configurableInner[T], replace bool, prepend bool) {
@@ -717,6 +928,14 @@ func (c *configurableInner[T]) setAppend(append *configurableInner[T], replace b
 			curr.replace = replace
 		}
 	}
+}
+
+func (c *configurableInner[T]) numLinks() int {
+	result := 0
+	for curr := c; curr != nil; curr = curr.next {
+		result++
+	}
+	return result
 }
 
 func (c *configurableInner[T]) appendSimpleValue(value T) {
@@ -761,10 +980,20 @@ func (c *singleConfigurable[T]) printfInto(value string) error {
 }
 
 func (c Configurable[T]) clone() any {
-	return Configurable[T]{
-		propertyName: c.propertyName,
-		inner:        c.inner.clone(),
+	var newPostProcessors *[][]postProcessor[T]
+	if c.postProcessors != nil {
+		x := appendPostprocessors(*c.postProcessors, nil, 0)
+		newPostProcessors = &x
 	}
+	return Configurable[T]{
+		propertyName:   c.propertyName,
+		inner:          c.inner.clone(),
+		postProcessors: newPostProcessors,
+	}
+}
+
+func (c Configurable[T]) Clone() Configurable[T] {
+	return c.clone().(Configurable[T])
 }
 
 func (c *configurableInner[T]) clone() *configurableInner[T] {
@@ -973,6 +1202,7 @@ func promoteValueToConfigurable(origional reflect.Value) reflect.Value {
 					}},
 				},
 			},
+			postProcessors: &[][]postProcessor[string]{},
 		})
 	case reflect.Bool:
 		return reflect.ValueOf(Configurable[bool]{
@@ -983,6 +1213,7 @@ func promoteValueToConfigurable(origional reflect.Value) reflect.Value {
 					}},
 				},
 			},
+			postProcessors: &[][]postProcessor[bool]{},
 		})
 	case reflect.Slice:
 		return reflect.ValueOf(Configurable[[]string]{
@@ -993,6 +1224,7 @@ func promoteValueToConfigurable(origional reflect.Value) reflect.Value {
 					}},
 				},
 			},
+			postProcessors: &[][]postProcessor[[]string]{},
 		})
 	default:
 		panic(fmt.Sprintf("Can't convert %s property to a configurable", origional.Kind().String()))
