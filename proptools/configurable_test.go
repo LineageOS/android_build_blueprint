@@ -43,6 +43,24 @@ func TestPostProcessor(t *testing.T) {
 	}
 }
 
+func TestPostProcessorWhenPassedToHelperFunction(t *testing.T) {
+	prop := NewConfigurable[[]string](nil, nil)
+	prop.AppendSimpleValue([]string{"a"})
+	prop.AppendSimpleValue([]string{"b"})
+
+	helper := func(p Configurable[[]string]) {
+		p.AddPostProcessor(addToElements("1"))
+	}
+
+	helper(prop)
+
+	expected := []string{"a1", "b1"}
+	x := prop.Get(&configurableEvalutorForTesting{})
+	if !reflect.DeepEqual(x.Get(), expected) {
+		t.Fatalf("Expected %v, got %v", expected, x.Get())
+	}
+}
+
 func addToElements(s string) func([]string) []string {
 	return func(arr []string) []string {
 		for i := range arr {
