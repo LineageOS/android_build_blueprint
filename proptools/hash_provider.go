@@ -22,7 +22,7 @@ import (
 	"hash/fnv"
 	"math"
 	"reflect"
-	"sort"
+	"slices"
 	"unsafe"
 )
 
@@ -32,97 +32,138 @@ import (
 var recordSeparator []byte = []byte{36}
 
 func CalculateHash(value interface{}) (uint64, error) {
-	hasher := fnv.New64()
-	ptrs := make(map[uintptr]bool)
+	hasher := hasher{
+		Hash64:   fnv.New64(),
+		int64Buf: make([]byte, 8),
+	}
 	v := reflect.ValueOf(value)
 	var err error
 	if v.IsValid() {
-		err = calculateHashInternal(hasher, v, ptrs)
+		err = hasher.calculateHash(v)
 	}
 	return hasher.Sum64(), err
 }
 
-func calculateHashInternal(hasher hash.Hash64, v reflect.Value, ptrs map[uintptr]bool) error {
-	var int64Array [8]byte
-	int64Buf := int64Array[:]
-	binary.LittleEndian.PutUint64(int64Buf, uint64(v.Kind()))
-	hasher.Write(int64Buf)
+type hasher struct {
+	hash.Hash64
+	int64Buf      []byte
+	ptrs          map[uintptr]bool
+	mapStateCache *mapState
+}
+
+type mapState struct {
+	indexes []int
+	keys    []reflect.Value
+	values  []reflect.Value
+}
+
+func (hasher *hasher) writeUint64(i uint64) {
+	binary.LittleEndian.PutUint64(hasher.int64Buf, i)
+	hasher.Write(hasher.int64Buf)
+}
+
+func (hasher *hasher) writeByte(i byte) {
+	hasher.int64Buf[0] = i
+	hasher.Write(hasher.int64Buf[:1])
+}
+
+func (hasher *hasher) getMapState(size int) *mapState {
+	s := hasher.mapStateCache
+	// Clear hasher.mapStateCache so that any recursive uses don't collide with this frame.
+	hasher.mapStateCache = nil
+
+	if s == nil {
+		s = &mapState{}
+	}
+
+	// Reset the slices to length `size` and capacity at least `size`
+	s.indexes = slices.Grow(s.indexes[:0], size)[0:size]
+	s.keys = slices.Grow(s.keys[:0], size)[0:size]
+	s.values = slices.Grow(s.values[:0], size)[0:size]
+
+	return s
+}
+
+func (hasher *hasher) putMapState(s *mapState) {
+	if hasher.mapStateCache == nil || cap(hasher.mapStateCache.indexes) < cap(s.indexes) {
+		hasher.mapStateCache = s
+	}
+}
+
+func (hasher *hasher) calculateHash(v reflect.Value) error {
+	hasher.writeUint64(uint64(v.Kind()))
 	v.IsValid()
 	switch v.Kind() {
 	case reflect.Struct:
-		binary.LittleEndian.PutUint64(int64Buf, uint64(v.NumField()))
-		hasher.Write(int64Buf)
+		hasher.writeUint64(uint64(v.NumField()))
 		for i := 0; i < v.NumField(); i++ {
 			hasher.Write(recordSeparator)
-			err := calculateHashInternal(hasher, v.Field(i), ptrs)
+			err := hasher.calculateHash(v.Field(i))
 			if err != nil {
 				return fmt.Errorf("in field %s: %s", v.Type().Field(i).Name, err.Error())
 			}
 		}
 	case reflect.Map:
-		binary.LittleEndian.PutUint64(int64Buf, uint64(v.Len()))
-		hasher.Write(int64Buf)
-		indexes := make([]int, v.Len())
-		keys := make([]reflect.Value, v.Len())
-		values := make([]reflect.Value, v.Len())
+		hasher.writeUint64(uint64(v.Len()))
 		iter := v.MapRange()
+		s := hasher.getMapState(v.Len())
 		for i := 0; iter.Next(); i++ {
-			indexes[i] = i
-			keys[i] = iter.Key()
-			values[i] = iter.Value()
+			s.indexes[i] = i
+			s.keys[i] = iter.Key()
+			s.values[i] = iter.Value()
 		}
-		sort.SliceStable(indexes, func(i, j int) bool {
-			return compare_values(keys[indexes[i]], keys[indexes[j]]) < 0
+		slices.SortFunc(s.indexes, func(i, j int) int {
+			return compare_values(s.keys[i], s.keys[j])
 		})
 		for i := 0; i < v.Len(); i++ {
 			hasher.Write(recordSeparator)
-			err := calculateHashInternal(hasher, keys[indexes[i]], ptrs)
+			err := hasher.calculateHash(s.keys[s.indexes[i]])
 			if err != nil {
 				return fmt.Errorf("in map: %s", err.Error())
 			}
 			hasher.Write(recordSeparator)
-			err = calculateHashInternal(hasher, keys[indexes[i]], ptrs)
+			err = hasher.calculateHash(s.keys[s.indexes[i]])
 			if err != nil {
 				return fmt.Errorf("in map: %s", err.Error())
 			}
 		}
+		hasher.putMapState(s)
 	case reflect.Slice, reflect.Array:
-		binary.LittleEndian.PutUint64(int64Buf, uint64(v.Len()))
-		hasher.Write(int64Buf)
+		hasher.writeUint64(uint64(v.Len()))
 		for i := 0; i < v.Len(); i++ {
 			hasher.Write(recordSeparator)
-			err := calculateHashInternal(hasher, v.Index(i), ptrs)
+			err := hasher.calculateHash(v.Index(i))
 			if err != nil {
 				return fmt.Errorf("in %s at index %d: %s", v.Kind().String(), i, err.Error())
 			}
 		}
 	case reflect.Pointer:
 		if v.IsNil() {
-			int64Buf[0] = 0
-			hasher.Write(int64Buf[:1])
+			hasher.writeByte(0)
 			return nil
 		}
 		// Hardcoded value to indicate it is a pointer
-		binary.LittleEndian.PutUint64(int64Buf, uint64(0x55))
-		hasher.Write(int64Buf)
+		hasher.writeUint64(uint64(0x55))
 		addr := v.Pointer()
-		if _, ok := ptrs[addr]; ok {
+		if hasher.ptrs == nil {
+			hasher.ptrs = make(map[uintptr]bool)
+		}
+		if _, ok := hasher.ptrs[addr]; ok {
 			// We could make this an error if we want to disallow pointer cycles in the future
 			return nil
 		}
-		ptrs[addr] = true
-		err := calculateHashInternal(hasher, v.Elem(), ptrs)
+		hasher.ptrs[addr] = true
+		err := hasher.calculateHash(v.Elem())
 		if err != nil {
 			return fmt.Errorf("in pointer: %s", err.Error())
 		}
 	case reflect.Interface:
 		if v.IsNil() {
-			int64Buf[0] = 0
-			hasher.Write(int64Buf[:1])
+			hasher.writeByte(0)
 		} else {
 			// The only way get the pointer out of an interface to hash it or check for cycles
 			// would be InterfaceData(), but that's deprecated and seems like it has undefined behavior.
-			err := calculateHashInternal(hasher, v.Elem(), ptrs)
+			err := hasher.calculateHash(v.Elem())
 			if err != nil {
 				return fmt.Errorf("in interface: %s", err.Error())
 			}
@@ -131,27 +172,22 @@ func calculateHashInternal(hasher hash.Hash64, v reflect.Value, ptrs map[uintptr
 		strLen := len(v.String())
 		if strLen == 0 {
 			// unsafe.StringData is unspecified in this case
-			int64Buf[0] = 0
-			hasher.Write(int64Buf[:1])
+			hasher.writeByte(0)
 			return nil
 		}
 		hasher.Write(unsafe.Slice(unsafe.StringData(v.String()), strLen))
 	case reflect.Bool:
 		if v.Bool() {
-			int64Buf[0] = 1
+			hasher.writeByte(1)
 		} else {
-			int64Buf[0] = 0
+			hasher.writeByte(0)
 		}
-		hasher.Write(int64Buf[:1])
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-		binary.LittleEndian.PutUint64(int64Buf, v.Uint())
-		hasher.Write(int64Buf)
+		hasher.writeUint64(v.Uint())
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		binary.LittleEndian.PutUint64(int64Buf, uint64(v.Int()))
-		hasher.Write(int64Buf)
+		hasher.writeUint64(uint64(v.Int()))
 	case reflect.Float32, reflect.Float64:
-		binary.LittleEndian.PutUint64(int64Buf, math.Float64bits(v.Float()))
-		hasher.Write(int64Buf)
+		hasher.writeUint64(math.Float64bits(v.Float()))
 	default:
 		return fmt.Errorf("data may only contain primitives, strings, arrays, slices, structs, maps, and pointers, found: %s", v.Kind().String())
 	}
