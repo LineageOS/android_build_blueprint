@@ -38,6 +38,7 @@ bootstrap_go_package {
         "blueprint-metrics",
         "blueprint-parser",
         "blueprint-pathtools",
+        "blueprint-pool",
         "blueprint-proptools",
     ],
     pkgPath: "github.com/google/blueprint",
@@ -133,6 +134,14 @@ bootstrap_go_package {
     visibility: [
         // used by plugins
         "//visibility:public",
+    ],
+}
+
+bootstrap_go_package {
+    name: "blueprint-pool",
+    pkgPath: "github.com/google/blueprint/pool",
+    srcs: [
+        "pool/pool.go",
     ],
 }
 

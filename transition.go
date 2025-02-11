@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+
+	"github.com/google/blueprint/pool"
 )
 
 // TransitionMutator implements a top-down mechanism where a module tells its
@@ -212,6 +214,11 @@ func (t *transitionMutatorImpl) topDownMutator(mctx TopDownMutatorContext) {
 	module.outgoingTransitionCache = outgoingTransitionCache
 }
 
+var (
+	outgoingTransitionContextPool = pool.New[outgoingTransitionContextImpl]()
+	incomingTransitionContextPool = pool.New[incomingTransitionContextImpl]()
+)
+
 type transitionContextImpl struct {
 	context     *Context
 	source      *moduleInfo
@@ -266,11 +273,15 @@ func (t *transitionMutatorImpl) transition(mctx BaseModuleContext) Transition {
 			depTag:  depTag,
 			config:  mctx.Config(),
 		}
-		outgoingVariation := t.mutator.OutgoingTransition(&outgoingTransitionContextImpl{tc}, sourceVariation)
+		outCtx := outgoingTransitionContextPool.Get()
+		*outCtx = outgoingTransitionContextImpl{tc}
+		outgoingVariation := t.mutator.OutgoingTransition(outCtx, sourceVariation)
 		if mctx.Failed() {
 			return outgoingVariation
 		}
-		finalVariation := t.mutator.IncomingTransition(&incomingTransitionContextImpl{tc}, outgoingVariation)
+		inCtx := incomingTransitionContextPool.Get()
+		*inCtx = incomingTransitionContextImpl{tc}
+		finalVariation := t.mutator.IncomingTransition(inCtx, outgoingVariation)
 		return finalVariation
 	}
 }
