@@ -33,6 +33,23 @@
       "message": "On my side this reduces heap usage by 5GB and brings the memory usage around 25GB total.\nI\u0027ll wait for AOSP to merge this and pull in changes if needed, and probably needs more real users to verify I didn\u0027t fuck up their devices.",
       "revId": "e29c9607cf8015f45cd86750ab71342bbb95c063",
       "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "d060d19f_12187e90",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 11883
+      },
+      "writtenOn": "2025-02-12T19:35:22Z",
+      "side": 1,
+      "message": "AOSP now also contains the extra (compatible) changes I made, and got a +2",
+      "revId": "e29c9607cf8015f45cd86750ab71342bbb95c063",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
     }
   ]
 }
