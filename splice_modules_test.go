@@ -29,82 +29,82 @@ var (
 )
 
 var spliceModulesTestCases = []struct {
-	in         modulesOrAliases
+	in         moduleList
 	at         int
-	with       modulesOrAliases
-	out        modulesOrAliases
+	with       moduleList
+	out        moduleList
 	outAt      int
 	reallocate bool
 }{
 	{
 		// Insert at the beginning
-		in:         modulesOrAliases{testModuleA, testModuleB, testModuleC},
+		in:         moduleList{testModuleA, testModuleB, testModuleC},
 		at:         0,
-		with:       modulesOrAliases{testModuleD, testModuleE},
-		out:        modulesOrAliases{testModuleD, testModuleE, testModuleB, testModuleC},
+		with:       moduleList{testModuleD, testModuleE},
+		out:        moduleList{testModuleD, testModuleE, testModuleB, testModuleC},
 		outAt:      1,
 		reallocate: true,
 	},
 	{
 		// Insert in the middle
-		in:         modulesOrAliases{testModuleA, testModuleB, testModuleC},
+		in:         moduleList{testModuleA, testModuleB, testModuleC},
 		at:         1,
-		with:       modulesOrAliases{testModuleD, testModuleE},
-		out:        modulesOrAliases{testModuleA, testModuleD, testModuleE, testModuleC},
+		with:       moduleList{testModuleD, testModuleE},
+		out:        moduleList{testModuleA, testModuleD, testModuleE, testModuleC},
 		outAt:      2,
 		reallocate: true,
 	},
 	{
 		// Insert at the end
-		in:         modulesOrAliases{testModuleA, testModuleB, testModuleC},
+		in:         moduleList{testModuleA, testModuleB, testModuleC},
 		at:         2,
-		with:       modulesOrAliases{testModuleD, testModuleE},
-		out:        modulesOrAliases{testModuleA, testModuleB, testModuleD, testModuleE},
+		with:       moduleList{testModuleD, testModuleE},
+		out:        moduleList{testModuleA, testModuleB, testModuleD, testModuleE},
 		outAt:      3,
 		reallocate: true,
 	},
 	{
 		// Insert over a single element
-		in:         modulesOrAliases{testModuleA},
+		in:         moduleList{testModuleA},
 		at:         0,
-		with:       modulesOrAliases{testModuleD, testModuleE},
-		out:        modulesOrAliases{testModuleD, testModuleE},
+		with:       moduleList{testModuleD, testModuleE},
+		out:        moduleList{testModuleD, testModuleE},
 		outAt:      1,
 		reallocate: true,
 	},
 	{
 		// Insert at the beginning without reallocating
-		in:         modulesOrAliases{testModuleA, testModuleB, testModuleC, nil}[0:3],
+		in:         moduleList{testModuleA, testModuleB, testModuleC, nil}[0:3],
 		at:         0,
-		with:       modulesOrAliases{testModuleD, testModuleE},
-		out:        modulesOrAliases{testModuleD, testModuleE, testModuleB, testModuleC},
+		with:       moduleList{testModuleD, testModuleE},
+		out:        moduleList{testModuleD, testModuleE, testModuleB, testModuleC},
 		outAt:      1,
 		reallocate: false,
 	},
 	{
 		// Insert in the middle without reallocating
-		in:         modulesOrAliases{testModuleA, testModuleB, testModuleC, nil}[0:3],
+		in:         moduleList{testModuleA, testModuleB, testModuleC, nil}[0:3],
 		at:         1,
-		with:       modulesOrAliases{testModuleD, testModuleE},
-		out:        modulesOrAliases{testModuleA, testModuleD, testModuleE, testModuleC},
+		with:       moduleList{testModuleD, testModuleE},
+		out:        moduleList{testModuleA, testModuleD, testModuleE, testModuleC},
 		outAt:      2,
 		reallocate: false,
 	},
 	{
 		// Insert at the end without reallocating
-		in:         modulesOrAliases{testModuleA, testModuleB, testModuleC, nil}[0:3],
+		in:         moduleList{testModuleA, testModuleB, testModuleC, nil}[0:3],
 		at:         2,
-		with:       modulesOrAliases{testModuleD, testModuleE},
-		out:        modulesOrAliases{testModuleA, testModuleB, testModuleD, testModuleE},
+		with:       moduleList{testModuleD, testModuleE},
+		out:        moduleList{testModuleA, testModuleB, testModuleD, testModuleE},
 		outAt:      3,
 		reallocate: false,
 	},
 	{
 		// Insert over a single element without reallocating
-		in:         modulesOrAliases{testModuleA, nil}[0:1],
+		in:         moduleList{testModuleA, nil}[0:1],
 		at:         0,
-		with:       modulesOrAliases{testModuleD, testModuleE},
-		out:        modulesOrAliases{testModuleD, testModuleE},
+		with:       moduleList{testModuleD, testModuleE},
+		out:        moduleList{testModuleD, testModuleE},
 		outAt:      1,
 		reallocate: false,
 	},
@@ -112,7 +112,7 @@ var spliceModulesTestCases = []struct {
 
 func TestSpliceModules(t *testing.T) {
 	for _, testCase := range spliceModulesTestCases {
-		in := make(modulesOrAliases, len(testCase.in), cap(testCase.in))
+		in := make(moduleList, len(testCase.in), cap(testCase.in))
 		copy(in, testCase.in)
 		origIn := in
 		got, gotAt := spliceModules(in, testCase.at, testCase.with)
@@ -139,6 +139,6 @@ func TestSpliceModules(t *testing.T) {
 	}
 }
 
-func sameArray(a, b modulesOrAliases) bool {
+func sameArray(a, b moduleList) bool {
 	return &a[0:cap(a)][cap(a)-1] == &b[0:cap(b)][cap(b)-1]
 }

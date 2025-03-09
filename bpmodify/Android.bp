@@ -1,0 +1,17 @@
+bootstrap_go_package {
+    name: "blueprint-bpmodify",
+    pkgPath: "github.com/google/blueprint/bpmodify",
+    deps: [
+        "blueprint-parser",
+    ],
+    srcs: [
+        "bpmodify.go",
+    ],
+    testSrcs: [
+        "bpmodify_test.go",
+    ],
+    visibility: [
+        // used by plugins
+        "//visibility:public",
+    ],
+}

@@ -755,6 +755,36 @@ foo {
 }
 `,
 	},
+	{
+		name: "Simplify select",
+		input: `
+foo {
+    stuff: select(arch(), {
+        default: "a",
+    }),
+}
+`,
+		output: `
+foo {
+    stuff: "a",
+}
+`,
+	},
+	{
+		name: "Simplify select with append",
+		input: `
+foo {
+    stuff: select(arch(), {
+        default: "a",
+    }) + "foo",
+}
+`,
+		output: `
+foo {
+    stuff: "a" + "foo",
+}
+`,
+	},
 }
 
 func TestPrinter(t *testing.T) {

@@ -1,0 +1,11 @@
+bootstrap_go_package {
+    name: "blueprint-gobtools",
+    pkgPath: "github.com/google/blueprint/gobtools",
+    srcs: [
+        "gob_tools.go",
+    ],
+    visibility: [
+        // used by plugins
+        "//visibility:public",
+    ],
+}

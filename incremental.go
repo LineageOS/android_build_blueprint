@@ -31,7 +31,7 @@ type CachedProvider struct {
 type BuildActionCachedData struct {
 	Providers        []CachedProvider
 	Pos              *scanner.Position
-	OrderOnlyStrings *[]string
+	OrderOnlyStrings []string
 }
 
 type BuildActionCache = map[BuildActionCacheKey]*BuildActionCachedData

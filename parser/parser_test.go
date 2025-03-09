@@ -16,6 +16,7 @@ package parser
 
 import (
 	"bytes"
+	"errors"
 	"reflect"
 	"strconv"
 	"strings"
@@ -835,6 +836,25 @@ func TestParseValidInput(t *testing.T) {
 					len(testCase.comments), len(file.Comments))
 			}
 		})
+	}
+}
+
+func TestParseSelectWithoutTrailingComma(t *testing.T) {
+	r := bytes.NewBufferString(`
+	m {
+		foo: select(arch(), {
+			"arm64": true,
+			default: false
+		}),
+	}
+	`)
+	file, errs := ParseAndEval("", r, NewScope(nil))
+	if len(errs) != 0 {
+		t.Fatalf("%s", errors.Join(errs...).Error())
+	}
+	_, ok := file.Defs[0].(*Module).Properties[0].Value.(*Select)
+	if !ok {
+		t.Fatalf("did not parse to select")
 	}
 }
 

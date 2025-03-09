@@ -1,0 +1,17 @@
+bootstrap_go_package {
+    name: "blueprint-depset",
+    pkgPath: "github.com/google/blueprint/depset",
+    deps: [
+        "blueprint-gobtools",
+    ],
+    srcs: [
+        "depset.go",
+    ],
+    testSrcs: [
+        "depset_test.go",
+    ],
+    visibility: [
+        // used by plugins
+        "//visibility:public",
+    ],
+}

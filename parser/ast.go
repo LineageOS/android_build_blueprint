@@ -227,6 +227,28 @@ func (t Type) String() string {
 	}
 }
 
+func ZeroExpression(t Type) Expression {
+	switch t {
+	case UnknownType:
+		panic(fmt.Errorf("cannot create zero expression for UnknownType"))
+	case BoolType:
+		return &Bool{}
+	case StringType:
+		return &String{}
+	case Int64Type:
+		return &Int64{}
+	case ListType:
+		return &List{}
+	case MapType:
+		return &Map{}
+	case UnsetType:
+		panic(fmt.Errorf("cannot create zero expression for UnsetType"))
+
+	default:
+		panic(fmt.Errorf("Unknown type %d", t))
+	}
+}
+
 type Operator struct {
 	Args        [2]Expression
 	Operator    rune

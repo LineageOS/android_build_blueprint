@@ -35,6 +35,7 @@ license {
 bootstrap_go_package {
     name: "blueprint",
     deps: [
+        "blueprint-gobtools",
         "blueprint-metrics",
         "blueprint-parser",
         "blueprint-pathtools",
@@ -160,6 +161,7 @@ bootstrap_go_package {
         "proptools/filter.go",
         "proptools/hash_provider.go",
         "proptools/proptools.go",
+        "proptools/repack.go",
         "proptools/tag.go",
         "proptools/typeequal.go",
         "proptools/unpack.go",
@@ -172,6 +174,7 @@ bootstrap_go_package {
         "proptools/extend_test.go",
         "proptools/filter_test.go",
         "proptools/hash_provider_test.go",
+        "proptools/repack_test.go",
         "proptools/tag_test.go",
         "proptools/typeequal_test.go",
         "proptools/unpack_test.go",
@@ -231,18 +234,9 @@ blueprint_go_binary {
     deps: ["blueprint-parser"],
     srcs: ["bpfmt/bpfmt.go"],
     visibility: [
+        "//development/tools/cargo_embargo",
         "//tools/external_updater",
     ],
-}
-
-blueprint_go_binary {
-    name: "bpmodify",
-    deps: [
-        "blueprint-parser",
-        "blueprint-proptools",
-    ],
-    srcs: ["bpmodify/bpmodify.go"],
-    testSrcs: ["bpmodify/bpmodify_test.go"],
 }
 
 blueprint_go_binary {

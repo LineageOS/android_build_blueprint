@@ -127,6 +127,12 @@ type IncomingTransitionContext interface {
 	// mutator is running.  This should be used sparingly, all uses will have to be removed in order
 	// to support creating variants on demand.
 	IsAddingDependency() bool
+
+	// ModuleErrorf reports an error at the line number of the module type in the module definition.
+	ModuleErrorf(fmt string, args ...interface{})
+
+	// PropertyErrorf reports an error at the line number of a property in the module definition.
+	PropertyErrorf(property, fmt string, args ...interface{})
 }
 
 type OutgoingTransitionContext interface {
@@ -149,6 +155,12 @@ type OutgoingTransitionContext interface {
 	//
 	// This method shouldn't be used directly, prefer the type-safe android.ModuleProvider instead.
 	Provider(provider AnyProviderKey) (any, bool)
+
+	// ModuleErrorf reports an error at the line number of the module type in the module definition.
+	ModuleErrorf(fmt string, args ...interface{})
+
+	// PropertyErrorf reports an error at the line number of a property in the module definition.
+	PropertyErrorf(property, fmt string, args ...interface{})
 }
 
 type transitionMutatorImpl struct {
@@ -226,6 +238,7 @@ type transitionContextImpl struct {
 	depTag      DependencyTag
 	postMutator bool
 	config      interface{}
+	errs        []error
 }
 
 func (c *transitionContextImpl) DepTag() DependencyTag {
@@ -238,6 +251,20 @@ func (c *transitionContextImpl) Config() interface{} {
 
 func (c *transitionContextImpl) IsAddingDependency() bool {
 	return c.postMutator
+}
+
+func (c *transitionContextImpl) error(err error) {
+	if err != nil {
+		c.errs = append(c.errs, err)
+	}
+}
+
+func (c *transitionContextImpl) ModuleErrorf(fmt string, args ...interface{}) {
+	c.error(c.context.moduleErrorf(c.dep, fmt, args...))
+}
+
+func (c *transitionContextImpl) PropertyErrorf(property, fmt string, args ...interface{}) {
+	c.error(c.context.PropertyErrorf(c.dep.logicModule, property, fmt, args...))
 }
 
 type outgoingTransitionContextImpl struct {
@@ -276,12 +303,22 @@ func (t *transitionMutatorImpl) transition(mctx BaseModuleContext) Transition {
 		outCtx := outgoingTransitionContextPool.Get()
 		*outCtx = outgoingTransitionContextImpl{tc}
 		outgoingVariation := t.mutator.OutgoingTransition(outCtx, sourceVariation)
+		for _, err := range outCtx.errs {
+			mctx.error(err)
+		}
+		outgoingTransitionContextPool.Put(outCtx)
+		outCtx = nil
 		if mctx.Failed() {
 			return outgoingVariation
 		}
 		inCtx := incomingTransitionContextPool.Get()
 		*inCtx = incomingTransitionContextImpl{tc}
 		finalVariation := t.mutator.IncomingTransition(inCtx, outgoingVariation)
+		for _, err := range inCtx.errs {
+			mctx.error(err)
+		}
+		incomingTransitionContextPool.Put(inCtx)
+		inCtx = nil
 		return finalVariation
 	}
 }
@@ -317,12 +354,32 @@ func (t *transitionMutatorImpl) mutateMutator(mctx BottomUpMutatorContext) {
 	t.mutator.Mutate(mctx, currentVariation)
 }
 
-func (c *Context) RegisterTransitionMutator(name string, mutator TransitionMutator) {
+type TransitionMutatorHandle interface {
+	// NeverFar causes the variations created by this mutator to never be ignored when adding
+	// far variation dependencies. Normally, far variation dependencies ignore all the variants
+	// of the source module, and only use the variants explicitly requested by the
+	// AddFarVariationDependencies call.
+	NeverFar() TransitionMutatorHandle
+}
+
+type transitionMutatorHandle struct {
+	inner MutatorHandle
+}
+
+var _ TransitionMutatorHandle = (*transitionMutatorHandle)(nil)
+
+func (h *transitionMutatorHandle) NeverFar() TransitionMutatorHandle {
+	h.inner.setNeverFar()
+	return h
+}
+
+func (c *Context) RegisterTransitionMutator(name string, mutator TransitionMutator) TransitionMutatorHandle {
 	impl := &transitionMutatorImpl{name: name, mutator: mutator}
 
-	c.RegisterTopDownMutator(name+"_propagate", impl.topDownMutator).Parallel()
-	c.RegisterBottomUpMutator(name, impl.bottomUpMutator).Parallel().setTransitionMutator(impl)
-	c.RegisterBottomUpMutator(name+"_mutate", impl.mutateMutator).Parallel()
+	c.RegisterTopDownMutator(name+"_propagate", impl.topDownMutator)
+	bottomUpHandle := c.RegisterBottomUpMutator(name, impl.bottomUpMutator).setTransitionMutator(impl)
+	c.RegisterBottomUpMutator(name+"_mutate", impl.mutateMutator)
+	return &transitionMutatorHandle{inner: bottomUpHandle}
 }
 
 // This function is called for every dependency edge to determine which

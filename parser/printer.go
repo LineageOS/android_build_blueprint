@@ -139,15 +139,31 @@ func (p *printer) printExpression(value Expression) {
 }
 
 func (p *printer) printSelect(s *Select) {
+	print_append := func() {
+		if s.Append != nil {
+			p.requestSpace()
+			p.printToken("+", s.RBracePos)
+			p.requestSpace()
+			p.printExpression(s.Append)
+		}
+	}
 	if len(s.Cases) == 0 {
+		print_append()
 		return
 	}
 	if len(s.Cases) == 1 && len(s.Cases[0].Patterns) == 1 {
 		if str, ok := s.Cases[0].Patterns[0].Value.(*String); ok && str.Value == default_select_branch_name {
 			p.printExpression(s.Cases[0].Value)
 			p.pos = s.RBracePos
+			print_append()
 			return
 		}
+	}
+	if len(s.Cases) == 1 && len(s.Cases[0].Patterns) == 0 {
+		p.printExpression(s.Cases[0].Value)
+		p.pos = s.RBracePos
+		print_append()
+		return
 	}
 	p.requestSpace()
 	p.printToken("select(", s.KeywordPos)
@@ -217,12 +233,7 @@ func (p *printer) printSelect(s *Select) {
 	p.requestNewline()
 	p.unindent(s.RBracePos)
 	p.printToken("})", s.RBracePos)
-	if s.Append != nil {
-		p.requestSpace()
-		p.printToken("+", s.RBracePos)
-		p.requestSpace()
-		p.printExpression(s.Append)
-	}
+	print_append()
 }
 
 func (p *printer) printSelectPattern(pat SelectPattern) {

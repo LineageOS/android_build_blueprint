@@ -210,6 +210,10 @@ func (matchString) SnapshotCoverage() {
 	panic("shouldn't get here")
 }
 
+func (f matchString) InitRuntimeCoverage() (mode string, tearDown func(string, string) (string, error), snapcov func() float64) {
+	return
+}
+
 type corpusEntry = struct {
 	Parent     string
 	Path       string

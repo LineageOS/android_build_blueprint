@@ -17,13 +17,13 @@ package bootstrap
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 
 	"github.com/google/blueprint"
 	"github.com/google/blueprint/pathtools"
+	"github.com/google/blueprint/proptools"
 )
 
 var (
@@ -104,6 +104,22 @@ var (
 		},
 		"depfile", "generator")
 
+	cat = pctx.StaticRule("Cat",
+		blueprint.RuleParams{
+			Command:     "rm -f $out && cat $in > $out",
+			Description: "concatenate files to $out",
+		})
+
+	// ubuntu 14.04 offcially use dash for /bin/sh, and its builtin echo command
+	// doesn't support -e option. Therefore we force to use /bin/bash when writing out
+	// content to file.
+	writeFile = pctx.StaticRule("writeFile",
+		blueprint.RuleParams{
+			Command:     `rm -f $out && /bin/bash -c 'echo -e -n "$$0" > $out' $content`,
+			Description: "writing file $out",
+		},
+		"content")
+
 	generateBuildNinja = pctx.StaticRule("build.ninja",
 		blueprint.RuleParams{
 			// TODO: it's kinda ugly that some parameters are computed from
@@ -140,6 +156,71 @@ var (
 		return config.(BootstrapConfig).HostToolDir(), nil
 	})
 )
+
+var (
+	// echoEscaper escapes a string such that passing it to "echo -e" will produce the input value.
+	echoEscaper = strings.NewReplacer(
+		`\`, `\\`, // First escape existing backslashes so they aren't interpreted by `echo -e`.
+		"\n", `\n`, // Then replace newlines with \n
+	)
+)
+
+// shardString takes a string and returns a slice of strings where the length of each one is
+// at most shardSize.
+func shardString(s string, shardSize int) []string {
+	if len(s) == 0 {
+		return nil
+	}
+	ret := make([]string, 0, (len(s)+shardSize-1)/shardSize)
+	for len(s) > shardSize {
+		ret = append(ret, s[0:shardSize])
+		s = s[shardSize:]
+	}
+	if len(s) > 0 {
+		ret = append(ret, s)
+	}
+	return ret
+}
+
+// writeFileRule creates a ninja rule to write contents to a file.  The contents will be
+// escaped so that the file contains exactly the contents passed to the function.
+func writeFileRule(ctx blueprint.ModuleContext, outputFile string, content string) {
+	// This is MAX_ARG_STRLEN subtracted with some safety to account for shell escapes
+	const SHARD_SIZE = 131072 - 10000
+
+	buildWriteFileRule := func(outputFile string, content string) {
+		content = echoEscaper.Replace(content)
+		content = proptools.NinjaEscape(proptools.ShellEscapeIncludingSpaces(content))
+		if content == "" {
+			content = "''"
+		}
+		ctx.Build(pctx, blueprint.BuildParams{
+			Rule:        writeFile,
+			Outputs:     []string{outputFile},
+			Description: "write " + outputFile,
+			Args: map[string]string{
+				"content": content,
+			},
+		})
+	}
+
+	if len(content) > SHARD_SIZE {
+		var chunks []string
+		for i, c := range shardString(content, SHARD_SIZE) {
+			tempPath := fmt.Sprintf("%s.%d", outputFile, i)
+			buildWriteFileRule(tempPath, c)
+			chunks = append(chunks, tempPath)
+		}
+		ctx.Build(pctx, blueprint.BuildParams{
+			Rule:        cat,
+			Inputs:      chunks,
+			Outputs:     []string{outputFile},
+			Description: "Merging to " + outputFile,
+		})
+		return
+	}
+	buildWriteFileRule(outputFile, content)
+}
 
 type pluginDependencyTag struct {
 	blueprint.BaseDependencyTag
@@ -220,34 +301,20 @@ func (g *GoPackage) Properties() []interface{} {
 }
 
 func (g *GoPackage) DynamicDependencies(ctx blueprint.DynamicDependerModuleContext) []string {
-	if ctx.Module() != ctx.PrimaryModule() {
-		return nil
-	}
 	return g.properties.Deps
 }
 
 func (g *GoPackage) bootstrapDeps(ctx blueprint.BottomUpMutatorContext) {
-	if ctx.PrimaryModule() == ctx.Module() {
-		for _, plugin := range g.properties.PluginFor {
-			ctx.AddReverseDependency(ctx.Module(), pluginDepTag, plugin)
-		}
-		blueprint.SetProvider(ctx, DocsPackageProvider, &DocsPackageInfo{
-			PkgPath: g.properties.PkgPath,
-			Srcs:    g.properties.Srcs,
-		})
+	for _, plugin := range g.properties.PluginFor {
+		ctx.AddReverseDependency(ctx.Module(), pluginDepTag, plugin)
 	}
+	blueprint.SetProvider(ctx, DocsPackageProvider, &DocsPackageInfo{
+		PkgPath: g.properties.PkgPath,
+		Srcs:    g.properties.Srcs,
+	})
 }
 
 func (g *GoPackage) GenerateBuildActions(ctx blueprint.ModuleContext) {
-	// Allow the primary builder to create multiple variants.  Any variants after the first
-	// will copy outputs from the first.
-	if ctx.Module() != ctx.PrimaryModule() {
-		if info, ok := blueprint.OtherModuleProvider(ctx, ctx.PrimaryModule(), PackageProvider); ok {
-			blueprint.SetProvider(ctx, PackageProvider, info)
-		}
-		return
-	}
-
 	var (
 		name       = ctx.ModuleName()
 		hasPlugins = false
@@ -356,9 +423,6 @@ func newGoBinaryModuleFactory() func() (blueprint.Module, []interface{}) {
 }
 
 func (g *GoBinary) DynamicDependencies(ctx blueprint.DynamicDependerModuleContext) []string {
-	if ctx.Module() != ctx.PrimaryModule() {
-		return nil
-	}
 	return g.properties.Deps
 }
 
@@ -385,17 +449,6 @@ func (g *GoBinary) Properties() []interface{} {
 }
 
 func (g *GoBinary) GenerateBuildActions(ctx blueprint.ModuleContext) {
-	// Allow the primary builder to create multiple variants.  Any variants after the first
-	// will copy outputs from the first.
-	if ctx.Module() != ctx.PrimaryModule() {
-		if info, ok := blueprint.OtherModuleProvider(ctx, ctx.PrimaryModule(), BinaryProvider); ok {
-			g.installPath = info.InstallPath
-			g.outputFile = info.IntermediatePath
-			blueprint.SetProvider(ctx, BinaryProvider, info)
-		}
-		return
-	}
-
 	var (
 		name            = ctx.ModuleName()
 		objDir          = moduleObjDir(ctx)
@@ -517,13 +570,13 @@ func buildGoPluginLoader(ctx blueprint.ModuleContext, pkgPath, pluginSrc string)
 	return ret
 }
 
-func generateEmbedcfgFile(files []string, srcDir string, embedcfgFile string) {
+func generateEmbedcfgFile(ctx blueprint.ModuleContext, files []string, srcDir string, embedcfgFile string) {
 	embedcfg := struct {
 		Patterns map[string][]string
 		Files    map[string]string
 	}{
-		map[string][]string{},
-		map[string]string{},
+		make(map[string][]string, len(files)),
+		make(map[string]string, len(files)),
 	}
 
 	for _, file := range files {
@@ -533,11 +586,10 @@ func generateEmbedcfgFile(files []string, srcDir string, embedcfgFile string) {
 
 	embedcfgData, err := json.Marshal(&embedcfg)
 	if err != nil {
-		panic(err)
+		ctx.ModuleErrorf("Failed to marshal embedcfg data: %s", err.Error())
 	}
 
-	os.MkdirAll(filepath.Dir(embedcfgFile), os.ModePerm)
-	os.WriteFile(embedcfgFile, []byte(embedcfgData), 0644)
+	writeFileRule(ctx, embedcfgFile, string(embedcfgData))
 }
 
 func buildGoPackage(ctx blueprint.ModuleContext, pkgRoot string,
@@ -568,8 +620,9 @@ func buildGoPackage(ctx blueprint.ModuleContext, pkgRoot string,
 
 	if len(embedSrcs) > 0 {
 		embedcfgFile := archiveFile + ".embedcfg"
-		generateEmbedcfgFile(embedSrcs, srcDir, embedcfgFile)
+		generateEmbedcfgFile(ctx, embedSrcs, srcDir, embedcfgFile)
 		compileArgs["embedFlags"] = "-embedcfg " + embedcfgFile
+		deps = append(deps, embedcfgFile)
 	}
 
 	ctx.Build(pctx, blueprint.BuildParams{
@@ -790,7 +843,7 @@ func (s *singleton) GenerateBuildActions(ctx blueprint.SingletonContext) {
 // modules search for this package via -I arguments.
 func packageRoot(ctx blueprint.ModuleContext) string {
 	toolDir := ctx.Config().(BootstrapConfig).HostToolDir()
-	return filepath.Join(toolDir, "go", ctx.ModuleName(), "pkg")
+	return filepath.Join(toolDir, "go", ctx.ModuleName(), ctx.ModuleSubDir(), "pkg")
 }
 
 // testRoot returns the module-specific package root directory path used for
@@ -798,7 +851,7 @@ func packageRoot(ctx blueprint.ModuleContext) string {
 // packageRoot, plus the test-only code.
 func testRoot(ctx blueprint.ModuleContext) string {
 	toolDir := ctx.Config().(BootstrapConfig).HostToolDir()
-	return filepath.Join(toolDir, "go", ctx.ModuleName(), "test")
+	return filepath.Join(toolDir, "go", ctx.ModuleName(), ctx.ModuleSubDir(), "test")
 }
 
 // moduleSrcDir returns the path of the directory that all source file paths are
@@ -810,11 +863,11 @@ func moduleSrcDir(ctx blueprint.ModuleContext) string {
 // moduleObjDir returns the module-specific object directory path.
 func moduleObjDir(ctx blueprint.ModuleContext) string {
 	toolDir := ctx.Config().(BootstrapConfig).HostToolDir()
-	return filepath.Join(toolDir, "go", ctx.ModuleName(), "obj")
+	return filepath.Join(toolDir, "go", ctx.ModuleName(), ctx.ModuleSubDir(), "obj")
 }
 
 // moduleGenSrcDir returns the module-specific generated sources path.
 func moduleGenSrcDir(ctx blueprint.ModuleContext) string {
 	toolDir := ctx.Config().(BootstrapConfig).HostToolDir()
-	return filepath.Join(toolDir, "go", ctx.ModuleName(), "gen")
+	return filepath.Join(toolDir, "go", ctx.ModuleName(), ctx.ModuleSubDir(), "gen")
 }

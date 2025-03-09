@@ -11,72 +11,90 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package main
+
+package bpmodify
 
 import (
 	"strings"
 	"testing"
-
-	"github.com/google/blueprint/parser"
-	"github.com/google/blueprint/proptools"
 )
 
-var testCases = []struct {
-	name            string
-	input           string
-	output          string
-	property        string
-	addSet          string
-	removeSet       string
-	addLiteral      *string
-	setString       *string
-	setBool         *string
-	removeProperty  bool
-	replaceProperty string
-	moveProperty    bool
-	newLocation     string
-}{
-	{
-		name: "add",
-		input: `
+func must(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
+
+func must2[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return v
+}
+
+func simplifyModuleDefinition(def string) string {
+	var result string
+	for _, line := range strings.Split(def, "\n") {
+		result += strings.TrimSpace(line)
+	}
+	return result
+}
+func TestBpModify(t *testing.T) {
+	var testCases = []struct {
+		name     string
+		input    string
+		output   string
+		err      string
+		modified bool
+		f        func(bp *Blueprint)
+	}{
+		{
+			name: "add",
+			input: `
 			cc_foo {
 				name: "foo",
 			}
-		`,
-		output: `
+			`,
+			output: `
 			cc_foo {
 				name: "foo",
 				deps: ["bar"],
 			}
-		`,
-		property: "deps",
-		addSet:   "bar",
-	},
-	{
-		name: "remove",
-		input: `
+			`,
+			modified: true,
+			f: func(bp *Blueprint) {
+				props := must2(bp.ModulesByName("foo").GetOrCreateProperty(List, "deps"))
+				must(props.AddStringToList("bar"))
+			},
+		},
+		{
+			name: "remove",
+			input: `
 			cc_foo {
 				name: "foo",
 				deps: ["bar"],
 			}
-		`,
-		output: `
+			`,
+			output: `
 			cc_foo {
 				name: "foo",
 				deps: [],
 			}
-		`,
-		property:  "deps",
-		removeSet: "bar",
-	},
-	{
-		name: "nested add",
-		input: `
+			`,
+			modified: true,
+			f: func(bp *Blueprint) {
+				props := must2(bp.ModulesByName("foo").GetProperty("deps"))
+				must(props.RemoveStringFromList("bar"))
+			},
+		},
+		{
+			name: "nested add",
+			input: `
 			cc_foo {
 				name: "foo",
 			}
-		`,
-		output: `
+			`,
+			output: `
 			cc_foo {
 				name: "foo",
 				arch: {
@@ -87,13 +105,16 @@ var testCases = []struct {
 					},
 				},
 			}
-		`,
-		property: "arch.arm.deps",
-		addSet:   "nested_dep,dep2",
-	},
-	{
-		name: "nested remove",
-		input: `
+			`,
+			modified: true,
+			f: func(bp *Blueprint) {
+				props := must2(bp.ModulesByName("foo").GetOrCreateProperty(List, "arch.arm.deps"))
+				must(props.AddStringToList("nested_dep", "dep2"))
+			},
+		},
+		{
+			name: "nested remove",
+			input: `
 			cc_foo {
 				name: "foo",
 				arch: {
@@ -105,8 +126,8 @@ var testCases = []struct {
 					},
 				},
 			}
-		`,
-		output: `
+			`,
+			output: `
 			cc_foo {
 				name: "foo",
 				arch: {
@@ -116,26 +137,16 @@ var testCases = []struct {
 					},
 				},
 			}
-		`,
-		property:  "arch.arm.deps",
-		removeSet: "nested_dep,dep2",
-	},
-	{
-		name: "add existing",
-		input: `
-			cc_foo {
-				name: "foo",
-				arch: {
-					arm: {
-						deps: [
-							"nested_dep",
-							"dep2",
-						],
-					},
-				},
-			}
-		`,
-		output: `
+			`,
+			modified: true,
+			f: func(bp *Blueprint) {
+				props := must2(bp.ModulesByName("foo").GetProperty("arch.arm.deps"))
+				must(props.RemoveStringFromList("nested_dep", "dep2"))
+			},
+		},
+		{
+			name: "add existing",
+			input: `
 			cc_foo {
 				name: "foo",
 				arch: {
@@ -147,13 +158,8 @@ var testCases = []struct {
 					},
 				},
 			}
-		`,
-		property: "arch.arm.deps",
-		addSet:   "dep2,dep2",
-	},
-	{
-		name: "remove missing",
-		input: `
+			`,
+			output: `
 			cc_foo {
 				name: "foo",
 				arch: {
@@ -165,8 +171,16 @@ var testCases = []struct {
 					},
 				},
 			}
-		`,
-		output: `
+			`,
+			modified: false,
+			f: func(bp *Blueprint) {
+				props := must2(bp.ModulesByName("foo").GetOrCreateProperty(List, "arch.arm.deps"))
+				must(props.AddStringToList("dep2", "dep2"))
+			},
+		},
+		{
+			name: "remove missing",
+			input: `
 			cc_foo {
 				name: "foo",
 				arch: {
@@ -178,72 +192,98 @@ var testCases = []struct {
 					},
 				},
 			}
-		`,
-		property:  "arch.arm.deps",
-		removeSet: "dep3,dep4",
-	},
-	{
-		name: "remove non existent",
-		input: `
+			`,
+			output: `
+			cc_foo {
+				name: "foo",
+				arch: {
+					arm: {
+						deps: [
+							"nested_dep",
+							"dep2",
+						],
+					},
+				},
+			}
+			`,
+			modified: false,
+			f: func(bp *Blueprint) {
+				props := must2(bp.ModulesByName("foo").GetProperty("arch.arm.deps"))
+				must(props.RemoveStringFromList("dep3", "dep4"))
+			},
+		},
+		{
+			name: "remove non existent",
+			input: `
 			cc_foo {
 				name: "foo",
 			}
-		`,
-		output: `
+			`,
+			output: `
 			cc_foo {
 				name: "foo",
 			}
-		`,
-		property:  "deps",
-		removeSet: "bar",
-	},
-	{
-		name: "remove non existent nested",
-		input: `
+			`,
+			modified: false,
+			f: func(bp *Blueprint) {
+				props := must2(bp.ModulesByName("foo").GetProperty("deps"))
+				must(props.RemoveStringFromList("bar"))
+			},
+		},
+		{
+			name: "remove non existent nested",
+			input: `
 			cc_foo {
 				name: "foo",
 				arch: {},
 			}
-		`,
-		output: `
+			`,
+			output: `
 			cc_foo {
 				name: "foo",
 				arch: {},
 			}
-		`,
-		property:  "arch.arm.deps",
-		removeSet: "dep3,dep4",
-	},
-	{
-		name: "add numeric sorted",
-		input: `
+			`,
+			modified: false,
+			f: func(bp *Blueprint) {
+				props := must2(bp.ModulesByName("foo").GetProperty("arch.arm.deps"))
+				must(props.RemoveStringFromList("bar"))
+			},
+		},
+		{
+			name: "add numeric sorted",
+			input: `
 			cc_foo {
 				name: "foo",
-				versions: ["1", "2"],
+				versions: ["1", "2", "20"],
 			}
-		`,
-		output: `
+			`,
+			output: `
 			cc_foo {
 				name: "foo",
 				versions: [
 					"1",
 					"2",
 					"10",
+					"20",
 				],
 			}
-		`,
-		property: "versions",
-		addSet:   "10",
-	},
-	{
-		name: "add mixed sorted",
-		input: `
+			`,
+			modified: true,
+			f: func(bp *Blueprint) {
+				props := must2(bp.ModulesByName("foo").GetProperty("versions"))
+				must(props.AddStringToList("10"))
+			},
+		},
+		{
+			name: "add mixed sorted",
+			input: `
 			cc_foo {
 				name: "foo",
 				deps: ["bar-v1-bar", "bar-v2-bar"],
 			}
-		`,
-		output: `
+			`,
+			output: `
 			cc_foo {
 				name: "foo",
 				deps: [
@@ -252,154 +292,178 @@ var testCases = []struct {
 					"bar-v10-bar",
 				],
 			}
-		`,
-		property: "deps",
-		addSet:   "bar-v10-bar",
-	},
-	{
-		name:  "add a struct with literal",
-		input: `cc_foo {name: "foo"}`,
-		output: `cc_foo {
-    name: "foo",
-    structs: [
-        {
-            version: "1",
-            imports: [
-                "bar1",
-                "bar2",
-            ],
-        },
-    ],
-}
-`,
-		property:   "structs",
-		addLiteral: proptools.StringPtr(`{version: "1", imports: ["bar1", "bar2"]}`),
-	},
-	{
-		name: "set string",
-		input: `
+			`,
+			modified: true,
+			f: func(bp *Blueprint) {
+				props := must2(bp.ModulesByName("foo").GetProperty("deps"))
+				must(props.AddStringToList("bar-v10-bar"))
+			},
+		},
+		{
+			name:  "add a struct with literal",
+			input: `cc_foo {name: "foo"}`,
+			output: `cc_foo {
+				name: "foo",
+				structs: [
+					{
+						version: "1",
+
+						imports: [
+							"bar1",
+							"bar2",
+						],
+					},
+				],
+			}
+			`,
+			modified: true,
+			f: func(bp *Blueprint) {
+				props := must2(bp.ModulesByName("foo").GetOrCreateProperty(List, "structs"))
+				must(props.AddLiteral(`{version: "1", imports: ["bar1", "bar2"]}`))
+			},
+		},
+		{
+			name: "set string",
+			input: `
 			cc_foo {
 				name: "foo",
 			}
-		`,
-		output: `
+			`,
+			output: `
 			cc_foo {
 				name: "foo",
 				foo: "bar",
 			}
-		`,
-		property:  "foo",
-		setString: proptools.StringPtr("bar"),
-	},
-	{
-		name: "set existing string",
-		input: `
+			`,
+			modified: true,
+			f: func(bp *Blueprint) {
+				props := must2(bp.ModulesByName("foo").GetOrCreateProperty(String, "foo"))
+				must(props.SetString("bar"))
+			},
+		},
+		{
+			name: "set existing string",
+			input: `
 			cc_foo {
 				name: "foo",
 				foo: "baz",
 			}
-		`,
-		output: `
+			`,
+			output: `
 			cc_foo {
 				name: "foo",
 				foo: "bar",
 			}
-		`,
-		property:  "foo",
-		setString: proptools.StringPtr("bar"),
-	},
-	{
-		name: "set bool",
-		input: `
+			`,
+			modified: true,
+			f: func(bp *Blueprint) {
+				props := must2(bp.ModulesByName("foo").GetOrCreateProperty(String, "foo"))
+				must(props.SetString("bar"))
+			},
+		},
+		{
+			name: "set bool",
+			input: `
 			cc_foo {
 				name: "foo",
 			}
-		`,
-		output: `
-			cc_foo {
-				name: "foo",
-				foo: true,
-			}
-		`,
-		property: "foo",
-		setBool:  proptools.StringPtr("true"),
-	},
-	{
-		name: "set existing bool",
-		input: `
+			`,
+			output: `
 			cc_foo {
 				name: "foo",
 				foo: true,
 			}
-		`,
-		output: `
+			`,
+			modified: true,
+			f: func(bp *Blueprint) {
+				props := must2(bp.ModulesByName("foo").GetOrCreateProperty(Bool, "foo"))
+				must(props.SetBool(true))
+			},
+		},
+		{
+			name: "set existing bool",
+			input: `
+			cc_foo {
+				name: "foo",
+				foo: true,
+			}
+			`,
+			output: `
 			cc_foo {
 				name: "foo",
 				foo: false,
 			}
-		`,
-		property: "foo",
-		setBool:  proptools.StringPtr("false"),
-	},
-	{
-		name: "remove existing property",
-		input: `
-			cc_foo {
-				name: "foo",
-				foo: "baz",
-			}
-		`,
-		output: `
-			cc_foo {
-				name: "foo",
-			}
-		`,
-		property:       "foo",
-		removeProperty: true,
-	}, {
-		name: "remove nested property",
-		input: `
-		cc_foo {
-			name: "foo",
-			foo: {
-				bar: "baz",
+			`,
+			modified: true,
+			f: func(bp *Blueprint) {
+				props := must2(bp.ModulesByName("foo").GetOrCreateProperty(Bool, "foo"))
+				must(props.SetBool(false))
 			},
-		}
-	`,
-		output: `
-		cc_foo {
-			name: "foo",
-			foo: {},
-		}
-	`,
-		property:       "foo.bar",
-		removeProperty: true,
-	}, {
-		name: "remove non-existing property",
-		input: `
+		},
+		{
+			name: "remove existing property",
+			input: `
 			cc_foo {
 				name: "foo",
 				foo: "baz",
 			}
-		`,
-		output: `
+			`,
+			output: `
+			cc_foo {
+				name: "foo",
+			}
+			`,
+			modified: true,
+			f: func(bp *Blueprint) {
+				must(bp.ModulesByName("foo").RemoveProperty("foo"))
+			},
+		}, {
+			name: "remove nested property",
+			input: `
+			cc_foo {
+				name: "foo",
+				foo: {
+					bar: "baz",
+				},
+			}
+			`,
+			output: `
+			cc_foo {
+				name: "foo",
+				foo: {},
+			}
+			`,
+			modified: true,
+			f: func(bp *Blueprint) {
+				must(bp.ModulesByName("foo").RemoveProperty("foo.bar"))
+			},
+		}, {
+			name: "remove non-existing property",
+			input: `
 			cc_foo {
 				name: "foo",
 				foo: "baz",
 			}
-		`,
-		property:       "bar",
-		removeProperty: true,
-	}, {
-		name:     "replace property",
-		property: "deps",
-		input: `
+			`,
+			output: `
+			cc_foo {
+				name: "foo",
+				foo: "baz",
+			}
+			`,
+			modified: false,
+			f: func(bp *Blueprint) {
+				must(bp.ModulesByName("foo").RemoveProperty("bar"))
+			},
+		}, {
+			name: "replace property",
+			input: `
 			cc_foo {
 				name: "foo",
 				deps: ["baz", "unchanged"],
 			}
-		`,
-		output: `
+			`,
+			output: `
 			cc_foo {
 				name: "foo",
 				deps: [
@@ -407,20 +471,23 @@ var testCases = []struct {
                 "unchanged",
 				],
 			}
-		`,
-		replaceProperty: "baz=baz_lib,foobar=foobar_lib",
-	}, {
-		name:     "replace property multiple modules",
-		property: "deps,required",
-		input: `
+			`,
+			modified: true,
+			f: func(bp *Blueprint) {
+				props := must2(bp.ModulesByName("foo").GetProperty("deps"))
+				must(props.ReplaceStrings(map[string]string{"baz": "baz_lib", "foobar": "foobar_lib"}))
+			},
+		}, {
+			name: "replace property multiple modules",
+			input: `
 			cc_foo {
 				name: "foo",
 				deps: ["baz", "unchanged"],
 				unchanged: ["baz"],
 				required: ["foobar"],
 			}
-		`,
-		output: `
+			`,
+			output: `
 			cc_foo {
 				name: "foo",
 				deps: [
@@ -430,75 +497,86 @@ var testCases = []struct {
 				unchanged: ["baz"],
 				required: ["foobar_lib"],
 			}
-		`,
-		replaceProperty: "baz=baz_lib,foobar=foobar_lib",
-	}, {
-		name:     "replace property string value",
-		property: "name",
-		input: `
+			`,
+			modified: true,
+			f: func(bp *Blueprint) {
+				props := must2(bp.ModulesByName("foo").GetProperty("deps", "required"))
+				must(props.ReplaceStrings(map[string]string{"baz": "baz_lib", "foobar": "foobar_lib"}))
+			},
+		}, {
+			name: "replace property string value",
+			input: `
 			cc_foo {
 				name: "foo",
 				deps: ["baz"],
 				unchanged: ["baz"],
 				required: ["foobar"],
 			}
-		`,
-		output: `
+			`,
+			output: `
 			cc_foo {
 				name: "foo_lib",
 				deps: ["baz"],
 				unchanged: ["baz"],
 				required: ["foobar"],
 			}
-		`,
-		replaceProperty: "foo=foo_lib",
-	}, {
-		name:     "replace property string and list values",
-		property: "name,deps",
-		input: `
+			`,
+			modified: true,
+			f: func(bp *Blueprint) {
+				props := must2(bp.ModulesByName("foo").GetProperty("name"))
+				must(props.ReplaceStrings(map[string]string{"foo": "foo_lib"}))
+			},
+		}, {
+			name: "replace property string and list values",
+			input: `
 			cc_foo {
 				name: "foo",
 				deps: ["baz"],
 				unchanged: ["baz"],
 				required: ["foobar"],
 			}
-		`,
-		output: `
+			`,
+			output: `
 			cc_foo {
 				name: "foo_lib",
 				deps: ["baz_lib"],
 				unchanged: ["baz"],
 				required: ["foobar"],
 			}
-		`,
-		replaceProperty: "foo=foo_lib,baz=baz_lib",
-	}, {
-		name: "move contents of property into non-existing property",
-		input: `
+			`,
+			modified: true,
+			f: func(bp *Blueprint) {
+				props := must2(bp.ModulesByName("foo").GetProperty("name", "deps"))
+				must(props.ReplaceStrings(map[string]string{"foo": "foo_lib", "baz": "baz_lib"}))
+			},
+		}, {
+			name: "move contents of property into non-existing property",
+			input: `
 			cc_foo {
 				name: "foo",
 				bar: ["barContents"],
 				}
 `,
-		output: `
+			output: `
 			cc_foo {
 				name: "foo",
 				baz: ["barContents"],
 			}
-		`,
-		property:     "bar",
-		moveProperty: true,
-		newLocation:  "baz",
-	}, {
-		name: "move contents of property into existing property",
-		input: `
+			`,
+			modified: true,
+			f: func(bp *Blueprint) {
+				must(bp.ModulesByName("foo").MoveProperty("baz", "bar"))
+			},
+		}, {
+			name: "move contents of property into existing property",
+			input: `
 			cc_foo {
 				name: "foo",
 				baz: ["bazContents"],
 				bar: ["barContents"],
 			}
-		`,
-		output: `
+			`,
+			output: `
 			cc_foo {
 				name: "foo",
 				baz: [
@@ -507,128 +585,82 @@ var testCases = []struct {
 				],
 
 			}
-		`,
-		property:     "bar",
-		moveProperty: true,
-		newLocation:  "baz",
-	}, {
-		name: "replace nested",
-		input: `
-		cc_foo {
-			name: "foo",
-			foo: {
-				bar: "baz",
+			`,
+			modified: true,
+			f: func(bp *Blueprint) {
+				must(bp.ModulesByName("foo").MoveProperty("baz", "bar"))
 			},
-		}
-	`,
-		output: `
-		cc_foo {
-			name: "foo",
-			foo: {
-				bar: "baz2",
+		}, {
+			name: "replace nested",
+			input: `
+			cc_foo {
+				name: "foo",
+				foo: {
+					bar: "baz",
+				},
+			}
+			`,
+			output: `
+			cc_foo {
+				name: "foo",
+				foo: {
+					bar: "baz2",
+				},
+			}
+			`,
+			modified: true,
+			f: func(bp *Blueprint) {
+				props := must2(bp.ModulesByName("foo").GetProperty("foo.bar"))
+				must(props.ReplaceStrings(map[string]string{"baz": "baz2"}))
 			},
-		}
-	`,
-		property:        "foo.bar",
-		replaceProperty: "baz=baz2",
-	},
-}
-
-func simplifyModuleDefinition(def string) string {
-	var result string
-	for _, line := range strings.Split(def, "\n") {
-		result += strings.TrimSpace(line)
+		},
 	}
-	return result
-}
-func TestProcessModule(t *testing.T) {
+
 	for i, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			targetedProperties.Set(testCase.property)
-			addIdents.Set(testCase.addSet)
-			removeIdents.Set(testCase.removeSet)
-			removeProperty = &testCase.removeProperty
-			moveProperty = &testCase.moveProperty
-			newLocation = testCase.newLocation
-			setString = testCase.setString
-			setBool = testCase.setBool
-			addLiteral = testCase.addLiteral
-			replaceProperty.Set(testCase.replaceProperty)
-
-			inAst, errs := parser.ParseAndEval("", strings.NewReader(testCase.input), parser.NewScope(nil))
-			if len(errs) > 0 {
-				for _, err := range errs {
-					t.Errorf("  %s", err)
-				}
-				t.Errorf("failed to parse:")
-				t.Errorf("%+v", testCase)
-				t.FailNow()
+			bp, err := NewBlueprint("", []byte(testCase.input))
+			if err != nil {
+				t.Fatalf("error creating Blueprint: %s", err)
 			}
-			if inModule, ok := inAst.Defs[0].(*parser.Module); !ok {
-				t.Fatalf("  input must only contain a single module definition: %s", testCase.input)
-			} else {
-				for _, p := range targetedProperties.properties {
-					_, errs := processModuleProperty(inModule, "", inAst, p)
-					if len(errs) > 0 {
-						t.Errorf("test case %d:", i)
-						for _, err := range errs {
-							t.Errorf("  %s", err)
+			err = nil
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						if recoveredErr, ok := r.(error); ok {
+							err = recoveredErr
+						} else {
+							t.Fatalf("unexpected panic: %q", r)
 						}
 					}
-
+				}()
+				testCase.f(bp)
+			}()
+			if err != nil {
+				if testCase.err != "" {
+					if g, w := err.Error(), testCase.err; !strings.Contains(w, g) {
+						t.Errorf("unexpected error, want %q, got %q", g, w)
+					}
+				} else {
+					t.Errorf("unexpected error %q", err.Error())
 				}
-				inModuleText, _ := parser.Print(inAst)
-				inModuleString := string(inModuleText)
-				if simplifyModuleDefinition(inModuleString) != simplifyModuleDefinition(testCase.output) {
-					t.Errorf("test case %d:", i)
-					t.Errorf("expected module definition:")
-					t.Errorf("  %s", testCase.output)
-					t.Errorf("actual module definition:")
-					t.Errorf("  %s", inModuleString)
+			} else {
+				if testCase.err != "" {
+					t.Errorf("missing error, expected %q", testCase.err)
 				}
 			}
+
+			if g, w := bp.Modified(), testCase.modified; g != w {
+				t.Errorf("incorrect bp.Modified() value, want %v, got %v", w, g)
+			}
+
+			inModuleString := bp.String()
+			if simplifyModuleDefinition(inModuleString) != simplifyModuleDefinition(testCase.output) {
+				t.Errorf("test case %d:", i)
+				t.Errorf("expected module definition:")
+				t.Errorf("  %s", testCase.output)
+				t.Errorf("actual module definition:")
+				t.Errorf("  %s", inModuleString)
+			}
 		})
-	}
-}
-
-func TestReplacementsCycleError(t *testing.T) {
-	cycleString := "old1=new1,new1=old1"
-	err := replaceProperty.Set(cycleString)
-
-	if err.Error() != "Duplicated replacement name new1" {
-		t.Errorf("Error message did not match")
-		t.Errorf("Expected ")
-		t.Errorf(" Duplicated replacement name new1")
-		t.Errorf("actual error:")
-		t.Errorf("  %s", err.Error())
-		t.FailNow()
-	}
-}
-
-func TestReplacementsDuplicatedError(t *testing.T) {
-	cycleString := "a=b,a=c"
-	err := replaceProperty.Set(cycleString)
-
-	if err.Error() != "Duplicated replacement name a" {
-		t.Errorf("Error message did not match")
-		t.Errorf("Expected ")
-		t.Errorf(" Duplicated replacement name a")
-		t.Errorf("actual error:")
-		t.Errorf("  %s", err.Error())
-		t.FailNow()
-	}
-}
-
-func TestReplacementsMultipleReplacedToSame(t *testing.T) {
-	cycleString := "a=c,d=c"
-	err := replaceProperty.Set(cycleString)
-
-	if err.Error() != "Duplicated replacement name c" {
-		t.Errorf("Error message did not match")
-		t.Errorf("Expected ")
-		t.Errorf(" Duplicated replacement name c")
-		t.Errorf("actual error:")
-		t.Errorf("  %s", err.Error())
-		t.FailNow()
 	}
 }

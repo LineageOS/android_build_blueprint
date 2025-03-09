@@ -607,8 +607,11 @@ func (p *parser) parseSelect() Expression {
 			hasNonUnsetValue = true
 			c.Value = p.parseExpression()
 		}
-		if !p.accept(',') {
-			return nil
+		// allow trailing comma, require it if not seeing a }
+		if p.tok != '}' {
+			if !p.accept(',') {
+				return nil
+			}
 		}
 		result.Cases = append(result.Cases, c)
 	}

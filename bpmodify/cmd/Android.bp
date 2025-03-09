@@ -1,0 +1,9 @@
+blueprint_go_binary {
+    name: "bpmodify",
+    deps: [
+        "blueprint-bpmodify",
+        "blueprint-proptools",
+    ],
+    srcs: ["main.go"],
+    testSrcs: ["main_test.go"],
+}

@@ -99,6 +99,9 @@ type SingletonContext interface {
 	// VisitAllModules calls visit for each defined variant of each module in an unspecified order.
 	VisitAllModules(visit func(Module))
 
+	// VisitAllModuleProxies calls visit for each defined variant of each module in an unspecified order.
+	VisitAllModuleProxies(visit func(proxy ModuleProxy))
+
 	// VisitAllModules calls pred for each defined variant of each module in an unspecified order, and if pred returns
 	// true calls visit.
 	VisitAllModulesIf(pred func(Module) bool, visit func(Module))
@@ -134,13 +137,16 @@ type SingletonContext interface {
 	// VisitAllModuleVariants calls visit for each variant of the given module.
 	VisitAllModuleVariants(module Module, visit func(Module))
 
+	// VisitAllModuleVariantProxies calls visit for each variant of the given module.
+	VisitAllModuleVariantProxies(module Module, visit func(proxy ModuleProxy))
+
 	// PrimaryModule returns the first variant of the given module.  This can be used to perform
 	//	// singleton actions that are only done once for all variants of a module.
 	PrimaryModule(module Module) Module
 
-	// FinalModule returns the last variant of the given module.  This can be used to perform
+	// IsFinalModule returns if the given module is the last variant. This can be used to perform
 	// singleton actions that are only done once for all variants of a module.
-	FinalModule(module Module) Module
+	IsFinalModule(module Module) bool
 
 	// AddNinjaFileDeps adds dependencies on the specified files to the rule that creates the ninja manifest.  The
 	// primary builder will be rerun whenever the specified files are modified.
@@ -191,23 +197,23 @@ func (s *singletonContext) Name() string {
 }
 
 func (s *singletonContext) ModuleName(logicModule Module) string {
-	return s.context.ModuleName(logicModule)
+	return s.context.ModuleName(getWrappedModule(logicModule))
 }
 
 func (s *singletonContext) ModuleDir(logicModule Module) string {
-	return s.context.ModuleDir(logicModule)
+	return s.context.ModuleDir(getWrappedModule(logicModule))
 }
 
 func (s *singletonContext) ModuleSubDir(logicModule Module) string {
-	return s.context.ModuleSubDir(logicModule)
+	return s.context.ModuleSubDir(getWrappedModule(logicModule))
 }
 
 func (s *singletonContext) ModuleType(logicModule Module) string {
-	return s.context.ModuleType(logicModule)
+	return s.context.ModuleType(getWrappedModule(logicModule))
 }
 
 func (s *singletonContext) ModuleProvider(logicModule Module, provider AnyProviderKey) (any, bool) {
-	return s.context.ModuleProvider(logicModule, provider)
+	return s.context.ModuleProvider(getWrappedModule(logicModule), provider)
 }
 
 func (s *singletonContext) BlueprintFile(logicModule Module) string {
@@ -331,6 +337,10 @@ func (s *singletonContext) VisitAllModules(visit func(Module)) {
 	})
 }
 
+func (s *singletonContext) VisitAllModuleProxies(visit func(proxy ModuleProxy)) {
+	s.VisitAllModules(visitProxyAdaptor(visit))
+}
+
 func (s *singletonContext) VisitAllModulesIf(pred func(Module) bool,
 	visit func(Module)) {
 
@@ -361,12 +371,16 @@ func (s *singletonContext) PrimaryModule(module Module) Module {
 	return s.context.PrimaryModule(module)
 }
 
-func (s *singletonContext) FinalModule(module Module) Module {
-	return s.context.FinalModule(module)
+func (s *singletonContext) IsFinalModule(module Module) bool {
+	return s.context.IsFinalModule(module)
 }
 
 func (s *singletonContext) VisitAllModuleVariants(module Module, visit func(Module)) {
 	s.context.VisitAllModuleVariants(module, visit)
+}
+
+func (s *singletonContext) VisitAllModuleVariantProxies(module Module, visit func(proxy ModuleProxy)) {
+	s.context.VisitAllModuleVariants(module, visitProxyAdaptor(visit))
 }
 
 func (s *singletonContext) AddNinjaFileDeps(deps ...string) {
@@ -396,15 +410,20 @@ func (s *singletonContext) ModuleVariantsFromName(referer Module, name string) [
 		return nil
 	}
 	result := make([]Module, 0, len(moduleGroup.modules))
-	for _, module := range moduleGroup.modules {
-		moduleInfo := module.module()
-		if moduleInfo != nil {
-			result = append(result, moduleInfo.logicModule)
-		}
+	for _, moduleInfo := range moduleGroup.modules {
+		result = append(result, moduleInfo.logicModule)
 	}
 	return result
 }
 
 func (s *singletonContext) HasMutatorFinished(mutatorName string) bool {
 	return s.context.HasMutatorFinished(mutatorName)
+}
+
+func visitProxyAdaptor(visit func(proxy ModuleProxy)) func(module Module) {
+	return func(module Module) {
+		visit(ModuleProxy{
+			module: module,
+		})
+	}
 }

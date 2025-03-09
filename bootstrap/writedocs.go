@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"fmt"
+	"maps"
 	"path/filepath"
 	"reflect"
 
@@ -45,10 +46,7 @@ func ModuleTypeDocs(ctx *blueprint.Context, factories map[string]reflect.Value) 
 		}
 	})
 
-	mergedFactories := make(map[string]reflect.Value)
-	for moduleType, factory := range factories {
-		mergedFactories[moduleType] = factory
-	}
+	mergedFactories := maps.Clone(factories)
 
 	for moduleType, factory := range ctx.ModuleTypeFactories() {
 		if _, exists := mergedFactories[moduleType]; !exists {
